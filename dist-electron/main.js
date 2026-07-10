@@ -1,7 +1,7 @@
 import Database from "better-sqlite3";
 import fs from "node:fs";
 import path from "node:path";
-import { app, BrowserWindow } from "electron";
+import { app, BrowserWindow, ipcMain } from "electron";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 const databaseDir = path.join(process.cwd(), "database");
@@ -31,6 +31,23 @@ CREATE TABLE IF NOT EXISTS documents (
 );
 `);
 console.log("SQLite connected.");
+function addDocument(document) {
+  const stmt = db.prepare(`
+    INSERT INTO documents
+    (authors, year, title, journal, doi, pdf_path)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `);
+  stmt.run(
+    document.authors,
+    document.year,
+    document.title,
+    document.journal,
+    document.doi,
+    document.pdf_path
+  );
+  console.log("Document added:", document.title);
+}
+console.log("MAIN.TS LOADED");
 createRequire(import.meta.url);
 const __dirname$1 = path.dirname(fileURLToPath(import.meta.url));
 process.env.APP_ROOT = path.join(__dirname$1, "..");
@@ -66,7 +83,13 @@ app.on("activate", () => {
     createWindow();
   }
 });
-app.whenReady().then(createWindow);
+app.whenReady().then(() => {
+  ipcMain.handle("document:add", (_, document) => {
+    addDocument(document);
+    return true;
+  });
+  createWindow();
+});
 export {
   MAIN_DIST,
   RENDERER_DIST,

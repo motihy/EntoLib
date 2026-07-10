@@ -1,5 +1,8 @@
-import "./database/DatabaseManager";
-import { app, BrowserWindow } from 'electron'
+import { addDocument } from "./database/DatabaseManager";
+import { app, BrowserWindow, ipcMain } from 'electron'
+
+console.log("MAIN.TS LOADED");
+
 import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
@@ -66,4 +69,16 @@ app.on('activate', () => {
   }
 })
 
-app.whenReady().then(createWindow)
+app.whenReady().then(() => {
+
+  ipcMain.handle("document:add", (_, document) => {
+
+    addDocument(document);
+
+    return true;
+
+  });
+
+  createWindow();
+
+});
