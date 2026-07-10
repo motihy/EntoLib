@@ -1,4 +1,7 @@
-import { addDocument } from "./database/DatabaseManager";
+import {
+  addDocument,
+  getDocuments
+} from "./database/DatabaseManager";
 import { app, BrowserWindow, ipcMain } from 'electron'
 
 console.log("MAIN.TS LOADED");
@@ -70,15 +73,14 @@ app.on('activate', () => {
 })
 
 app.whenReady().then(() => {
-
   ipcMain.handle("document:add", (_, document) => {
-
     addDocument(document);
-
     return true;
+  });
 
+  ipcMain.handle("document:list", () => {
+    return getDocuments();
   });
 
   createWindow();
-
 });

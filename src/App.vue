@@ -1,7 +1,23 @@
 <script setup lang="ts">
-import { ref } from "vue";
+import { onMounted, ref } from "vue";
+
+interface DocumentRecord {
+  id: number;
+  authors: string;
+  year: number | null;
+  title: string;
+  journal: string | null;
+  volume: string | null;
+  issue: string | null;
+  pages: string | null;
+  doi: string | null;
+  pdf_path: string;
+  created_at: string;
+}
 
 const showForm = ref(false);
+const documents = ref<DocumentRecord[]>([]);
+const loading = ref(false);
 
 const authors = ref("");
 const year = ref<number | null>(null);
@@ -9,26 +25,55 @@ const title = ref("");
 const journal = ref("");
 const doi = ref("");
 
-async function saveDocument() {
-  await window.ipcRenderer.invoke("document:add", {
-    authors: authors.value,
-    year: year.value,
-    title: title.value,
-    journal: journal.value,
-    doi: doi.value,
-    pdf_path: ""
-  });
+async function loadDocuments() {
+  loading.value = true;
 
-  alert("保存しました");
-
-  showForm.value = false;
-
-  authors.value = "";
-  year.value = null;
-  title.value = "";
-  journal.value = "";
-  doi.value = "";
+  try {
+    documents.value = await window.ipcRenderer.invoke("document:list");
+  } catch (error) {
+    console.error("文献一覧の取得に失敗しました:", error);
+    alert("文献一覧を取得できませんでした");
+  } finally {
+    loading.value = false;
+  }
 }
+
+async function saveDocument() {
+  if (!authors.value.trim() || !title.value.trim()) {
+    alert("AuthorsとTitleを入力してください");
+    return;
+  }
+
+  try {
+    await window.ipcRenderer.invoke("document:add", {
+      authors: authors.value.trim(),
+      year: year.value,
+      title: title.value.trim(),
+      journal: journal.value.trim(),
+      doi: doi.value.trim() || null,
+      pdf_path: ""
+    });
+
+    await loadDocuments();
+
+    showForm.value = false;
+
+    authors.value = "";
+    year.value = null;
+    title.value = "";
+    journal.value = "";
+    doi.value = "";
+
+    alert("保存しました");
+  } catch (error) {
+    console.error("保存に失敗しました:", error);
+    alert("保存に失敗しました");
+  }
+}
+
+onMounted(() => {
+  loadDocuments();
+});
 </script>
 
 
@@ -52,7 +97,10 @@ async function saveDocument() {
      <input type="text" v-model="authors">
 
      <label>Year</label>
-     <input type="number" v-model="year">
+     <input
+     type="number"
+     v-model.number="year"
+     >
 
      <label>Title</label>
      <input type="text" v-model="title">
@@ -80,12 +128,26 @@ async function saveDocument() {
       </thead>
 
       <tbody>
-        <tr>
-          <td colspan="3">まだ文献はありません</td>
-        </tr>
-      </tbody>
+        <tr v-if="loading">
+       <td colspan="3">読み込み中...</td>
+       </tr>
 
-    </table>
+        <tr v-else-if="documents.length === 0">
+       <td colspan="3">まだ文献はありません</td>
+        </tr>
+
+       <tr
+       v-else
+       v-for="document in documents"
+       :key="document.id"
+       >
+        <td>{{ document.authors }}</td>
+        <td>{{ document.year ?? "" }}</td>
+        <td>{{ document.title }}</td>
+       </tr>
+       </tbody>
+
+       </table>
 
   </div>
 </template>
