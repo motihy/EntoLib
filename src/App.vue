@@ -23,7 +23,11 @@ const authors = ref("");
 const year = ref<number | null>(null);
 const title = ref("");
 const journal = ref("");
+const volume = ref("");
+const issue = ref("");
+const pages = ref("");
 const doi = ref("");
+
 
 async function loadDocuments() {
   loading.value = true;
@@ -45,14 +49,18 @@ async function saveDocument() {
   }
 
   try {
-    await window.ipcRenderer.invoke("document:add", {
-      authors: authors.value.trim(),
-      year: year.value,
-      title: title.value.trim(),
-      journal: journal.value.trim(),
-      doi: doi.value.trim() || null,
-      pdf_path: ""
-    });
+   await window.ipcRenderer.invoke("document:add", {
+  authors: authors.value.trim(),
+  year: year.value,
+  title: title.value.trim(),
+  journal: journal.value.trim(),
+  volume: volume.value.trim(),
+  issue: issue.value.trim(),
+  pages: pages.value.trim(),
+  doi: doi.value.trim() || null,
+  pdf_path: ""
+  });
+    
 
     await loadDocuments();
 
@@ -61,8 +69,11 @@ async function saveDocument() {
     authors.value = "";
     year.value = null;
     title.value = "";
-    journal.value = "";
-    doi.value = "";
+   journal.value = "";
+   volume.value = "";
+   issue.value = "";
+   pages.value = "";
+   doi.value = "";
 
     alert("保存しました");
   } catch (error) {
@@ -107,6 +118,24 @@ onMounted(() => {
 
      <label>Journal</label>
      <input type="text" v-model="journal">
+     <label>
+      Volume
+     <input type="text" v-model="volume">
+      </label>
+
+     <label>
+     Issue
+     <input type="text" v-model="issue">
+     </label>
+
+     <label>
+     Pages
+     <input
+     type="text"
+      v-model="pages"
+      placeholder="例: 123–145"
+     >
+     </label>
 
      <label>DOI</label>
      <input type="text" v-model="doi">
@@ -120,31 +149,42 @@ onMounted(() => {
 
 </div>
       <thead>
-        <tr>
-          <th>Authors</th>
-          <th>Year</th>
-          <th>Title</th>
-        </tr>
-      </thead>
+     <tr>
+     <th>Authors</th>
+     <th>Year</th>
+     <th>Title</th>
+     <th>Journal</th>
+     <th>Volume</th>
+     <th>Pages</th>
+     </tr>
+     </thead>
 
       <tbody>
         <tr v-if="loading">
-       <td colspan="3">読み込み中...</td>
+       <td colspan="6">読み込み中...</td>
        </tr>
 
         <tr v-else-if="documents.length === 0">
-       <td colspan="3">まだ文献はありません</td>
+       <td colspan="6">まだ文献はありません</td>
         </tr>
 
        <tr
-       v-else
-       v-for="document in documents"
-       :key="document.id"
-       >
-        <td>{{ document.authors }}</td>
-        <td>{{ document.year ?? "" }}</td>
-        <td>{{ document.title }}</td>
-       </tr>
+         v-for="document in documents"
+         v-else
+         :key="document.id"
+          >
+         <td>{{ document.authors }}</td>
+         <td>{{ document.year ?? "" }}</td>
+         <td>{{ document.title }}</td>
+         <td>{{ document.journal ?? "" }}</td>
+         <td>
+         {{ document.volume ?? "" }}
+          <span v-if="document.issue">
+          ({{ document.issue }})
+         </span>
+         </td>
+          <td>{{ document.pages ?? "" }}</td>
+          </tr>
        </tbody>
 
        </table>
