@@ -65,3 +65,17 @@ th{
 .buttons button{
     margin-right:10px;
 }
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.search-input {
+  flex: 1;
+  max-width: 600px;
+  padding: 10px 12px;
+  border: 1px solid #cccccc;
+  border-radius: 6px;
+  font-size: 14px;
+}

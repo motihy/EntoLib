@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from "vue";
+import { computed, onMounted, ref } from "vue";
 
 interface DocumentRecord {
   id: number;
@@ -17,6 +17,34 @@ interface DocumentRecord {
 
 const showForm = ref(false);
 const documents = ref<DocumentRecord[]>([]);
+const searchQuery = ref("");
+
+const filteredDocuments = computed(() => {
+  const query = searchQuery.value.trim().toLocaleLowerCase();
+
+  if (!query) {
+    return documents.value;
+  }
+
+  return documents.value.filter((document) => {
+    const searchableValues = [
+      document.authors,
+      document.year,
+      document.title,
+      document.journal,
+      document.volume,
+      document.issue,
+      document.pages,
+      document.doi
+    ];
+
+    return searchableValues.some((value) =>
+      String(value ?? "")
+        .toLocaleLowerCase()
+        .includes(query)
+    );
+  });
+});
 const loading = ref(false);
 
 const authors = ref("");
@@ -93,11 +121,18 @@ onMounted(() => {
 
     <h1>EntoLib</h1>
 
-    <div class="toolbar">
-     <button @click="showForm = true">
-     Add Paper
-     </button>
-    </div>
+   <div class="toolbar">
+  <input
+    v-model="searchQuery"
+    class="search-input"
+    type="search"
+    placeholder="Search authors, title, journal, DOI..."
+  />
+
+  <button @click="showForm = true">
+    Add Paper
+  </button>
+</div>
 
     <table>
      <div v-if="showForm" class="form">
@@ -160,33 +195,39 @@ onMounted(() => {
      </thead>
 
       <tbody>
-        <tr v-if="loading">
-       <td colspan="6">読み込み中...</td>
-       </tr>
+  <tr v-if="loading">
+    <td colspan="6">読み込み中...</td>
+  </tr>
 
-        <tr v-else-if="documents.length === 0">
-       <td colspan="6">まだ文献はありません</td>
-        </tr>
+  <tr v-else-if="filteredDocuments.length === 0">
+    <td colspan="6">
+      {{
+        searchQuery.trim()
+          ? "一致する文献がありません"
+          : "まだ文献はありません"
+      }}
+    </td>
+  </tr>
 
-       <tr
-         v-for="document in documents"
-         v-else
-         :key="document.id"
-          >
-         <td>{{ document.authors }}</td>
-         <td>{{ document.year ?? "" }}</td>
-         <td>{{ document.title }}</td>
-         <td>{{ document.journal ?? "" }}</td>
-         <td>
-         {{ document.volume ?? "" }}
-          <span v-if="document.issue">
+  <template v-else>
+    <tr
+      v-for="document in filteredDocuments"
+      :key="document.id"
+    >
+      <td>{{ document.authors }}</td>
+      <td>{{ document.year ?? "" }}</td>
+      <td>{{ document.title }}</td>
+      <td>{{ document.journal ?? "" }}</td>
+      <td>
+        {{ document.volume ?? "" }}
+        <span v-if="document.issue">
           ({{ document.issue }})
-         </span>
-         </td>
-          <td>{{ document.pages ?? "" }}</td>
-          </tr>
-       </tbody>
-
+        </span>
+      </td>
+      <td>{{ document.pages ?? "" }}</td>
+    </tr>
+  </template>
+</tbody>
        </table>
 
   </div>
