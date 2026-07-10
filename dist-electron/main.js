@@ -1,7 +1,16 @@
+import Database from "better-sqlite3";
+import fs from "node:fs";
+import path from "node:path";
 import { app, BrowserWindow } from "electron";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
-import path from "node:path";
+const databaseDir = path.join(process.cwd(), "database");
+if (!fs.existsSync(databaseDir)) {
+  fs.mkdirSync(databaseDir, { recursive: true });
+}
+const databasePath = path.join(databaseDir, "entolib.db");
+new Database(databasePath);
+console.log("SQLite connected.");
 createRequire(import.meta.url);
 const __dirname$1 = path.dirname(fileURLToPath(import.meta.url));
 process.env.APP_ROOT = path.join(__dirname$1, "..");
