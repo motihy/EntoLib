@@ -16,3 +16,16 @@ If the standalone TypeScript plugin doesn't feel fast enough to you, Volar has a
    1. Run `Extensions: Show Built-in Extensions` from VSCode's command palette
    2. Find `TypeScript and JavaScript Language Features`, right click and select `Disable (Workspace)`
 2. Reload the VSCode window by running `Developer: Reload Window` from the command palette.
+# EntoLib
+
+Open-source Reference & Taxonomy Manager for Entomologists
+
+Designed by taxonomists, for taxonomists.
+
+## Vision
+
+EntoLib aims to become an open-source platform for managing taxonomic literature, PDFs, taxa and research knowledge.
+
+## Status
+
+🚧 Under Development
