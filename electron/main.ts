@@ -1,6 +1,7 @@
 import {
   addDocument,
-  getDocuments
+  getDocuments,
+  moveDocumentToTrash
 } from "./database/DatabaseManager";
 import { app, BrowserWindow, ipcMain } from 'electron'
 
@@ -73,8 +74,8 @@ app.on('activate', () => {
 })
 
 app.whenReady().then(() => {
-  ipcMain.handle("document:add", (_, document) => {
-    addDocument(document);
+  ipcMain.handle("document:add", (_, documentData) => {
+    addDocument(documentData);
     return true;
   });
 
@@ -82,5 +83,10 @@ app.whenReady().then(() => {
     return getDocuments();
   });
 
+  ipcMain.handle("document:trash", (_, id: number) => {
+    return moveDocumentToTrash(id);
+  });
+
   createWindow();
 });
+

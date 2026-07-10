@@ -13,11 +13,22 @@ interface DocumentRecord {
   doi: string | null;
   pdf_path: string;
   created_at: string;
+  deleted_at: string | null;
 }
 
 const showForm = ref(false);
 const documents = ref<DocumentRecord[]>([]);
+const loading = ref(false);
 const searchQuery = ref("");
+
+const authors = ref("");
+const year = ref<number | null>(null);
+const title = ref("");
+const journal = ref("");
+const volume = ref("");
+const issue = ref("");
+const pages = ref("");
+const doi = ref("");
 
 const filteredDocuments = computed(() => {
   const query = searchQuery.value.trim().toLocaleLowerCase();
@@ -45,17 +56,6 @@ const filteredDocuments = computed(() => {
     );
   });
 });
-const loading = ref(false);
-
-const authors = ref("");
-const year = ref<number | null>(null);
-const title = ref("");
-const journal = ref("");
-const volume = ref("");
-const issue = ref("");
-const pages = ref("");
-const doi = ref("");
-
 
 async function loadDocuments() {
   loading.value = true;
@@ -77,18 +77,17 @@ async function saveDocument() {
   }
 
   try {
-   await window.ipcRenderer.invoke("document:add", {
-  authors: authors.value.trim(),
-  year: year.value,
-  title: title.value.trim(),
-  journal: journal.value.trim(),
-  volume: volume.value.trim(),
-  issue: issue.value.trim(),
-  pages: pages.value.trim(),
-  doi: doi.value.trim() || null,
-  pdf_path: ""
-  });
-    
+    await window.ipcRenderer.invoke("document:add", {
+      authors: authors.value.trim(),
+      year: year.value,
+      title: title.value.trim(),
+      journal: journal.value.trim(),
+      volume: volume.value.trim(),
+      issue: issue.value.trim(),
+      pages: pages.value.trim(),
+      doi: doi.value.trim() || null,
+      pdf_path: ""
+    });
 
     await loadDocuments();
 
@@ -97,16 +96,43 @@ async function saveDocument() {
     authors.value = "";
     year.value = null;
     title.value = "";
-   journal.value = "";
-   volume.value = "";
-   issue.value = "";
-   pages.value = "";
-   doi.value = "";
+    journal.value = "";
+    volume.value = "";
+    issue.value = "";
+    pages.value = "";
+    doi.value = "";
 
     alert("保存しました");
   } catch (error) {
     console.error("保存に失敗しました:", error);
     alert("保存に失敗しました");
+  }
+}
+
+async function trashDocument(document: DocumentRecord) {
+  const confirmed = window.confirm(
+    `「${document.title}」をゴミ箱へ移動しますか？`
+  );
+
+  if (!confirmed) {
+    return;
+  }
+
+  try {
+    const moved = await window.ipcRenderer.invoke(
+      "document:trash",
+      document.id
+    );
+
+    if (!moved) {
+      alert("文献をゴミ箱へ移動できませんでした");
+      return;
+    }
+
+    await loadDocuments();
+  } catch (error) {
+    console.error("ゴミ箱への移動に失敗しました:", error);
+    alert("ゴミ箱への移動に失敗しました");
   }
 }
 
@@ -183,24 +209,26 @@ onMounted(() => {
      </div>
 
 </div>
+      
       <thead>
-     <tr>
+      <tr>
      <th>Authors</th>
      <th>Year</th>
      <th>Title</th>
      <th>Journal</th>
      <th>Volume</th>
      <th>Pages</th>
+     <th>Actions</th>
      </tr>
      </thead>
 
       <tbody>
   <tr v-if="loading">
-    <td colspan="6">読み込み中...</td>
+   <td colspan="7">読み込み中...</td>
   </tr>
 
   <tr v-else-if="filteredDocuments.length === 0">
-    <td colspan="6">
+    <td colspan="7">
       {{
         searchQuery.trim()
           ? "一致する文献がありません"
@@ -210,23 +238,38 @@ onMounted(() => {
   </tr>
 
   <template v-else>
-    <tr
-      v-for="document in filteredDocuments"
-      :key="document.id"
-    >
-      <td>{{ document.authors }}</td>
-      <td>{{ document.year ?? "" }}</td>
-      <td>{{ document.title }}</td>
-      <td>{{ document.journal ?? "" }}</td>
-      <td>
-        {{ document.volume ?? "" }}
-        <span v-if="document.issue">
-          ({{ document.issue }})
-        </span>
-      </td>
-      <td>{{ document.pages ?? "" }}</td>
-    </tr>
-  </template>
+  <tr
+    v-for="document in filteredDocuments"
+    :key="document.id"
+  >
+    <td>{{ document.authors }}</td>
+
+    <td>{{ document.year ?? "" }}</td>
+
+    <td>{{ document.title }}</td>
+
+    <td>{{ document.journal ?? "" }}</td>
+
+    <td>
+      {{ document.volume ?? "" }}
+      <span v-if="document.issue">
+        ({{ document.issue }})
+      </span>
+    </td>
+
+    <td>{{ document.pages ?? "" }}</td>
+
+    <td>
+      <button
+        class="trash-button"
+        type="button"
+        @click="trashDocument(document)"
+      >
+        Trash
+      </button>
+    </td>
+  </tr>
+</template>
 </tbody>
        </table>
 
