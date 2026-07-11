@@ -6,10 +6,12 @@ import {
 import { createReadStream } from "node:fs";
 import {
   copyFile,
-  mkdir
+  mkdir,
+  unlink
 } from "node:fs/promises";
 import path from "node:path";
 
+// EntoLibが管理するPDF保存フォルダー
 export function getPdfStorageDirectory(): string {
   return path.join(
     app.getPath("documents"),
@@ -19,7 +21,12 @@ export function getPdfStorageDirectory(): string {
   );
 }
 
+// PDFがEntoLib管理フォルダー内にあるか確認
 function isManagedPdf(pdfPath: string): boolean {
+  if (!pdfPath) {
+    return false;
+  }
+
   const storageDirectory = path.resolve(
     getPdfStorageDirectory()
   );
@@ -71,7 +78,7 @@ export async function importPdf(
     );
   }
 
-  // すでにEntoLib管理フォルダー内ならコピーしない
+  // すでに管理フォルダー内ならコピーしない
   if (isManagedPdf(sourcePath)) {
     return sourcePath;
   }
@@ -99,4 +106,39 @@ export async function importPdf(
   );
 
   return destinationPath;
+}
+
+// DB登録などに失敗した場合、今回コピーしたPDFを削除
+export async function removeManagedPdf(
+  pdfPath: string
+): Promise<void> {
+  if (
+    !pdfPath ||
+    !isManagedPdf(pdfPath)
+  ) {
+    return;
+  }
+
+  try {
+    await unlink(pdfPath);
+
+    console.log(
+      "Unused PDF removed:",
+      pdfPath
+    );
+  } catch (error) {
+    const errorCode =
+      typeof error === "object" &&
+      error !== null &&
+      "code" in error
+        ? String(
+            (error as { code?: unknown }).code
+          )
+        : "";
+
+    // すでにファイルがない場合は正常扱い
+    if (errorCode !== "ENOENT") {
+      throw error;
+    }
+  }
 }

@@ -17,8 +17,22 @@ interface DocumentRecord {
   pages: string | null;
   doi: string | null;
   pdf_path: string;
+  file_hash: string | null;
   created_at: string;
   deleted_at: string | null;
+}
+
+interface ExtractedDocumentMetadata {
+  authors: string;
+  year: number | null;
+  title: string;
+  journal: string;
+  volume: string;
+  issue: string;
+  pages: string;
+  doi: string;
+  source: "crossref" | "pdf";
+  warning: string | null;
 }
 
 type ViewMode = "library" | "trash";
@@ -30,7 +44,9 @@ const formSection = ref<HTMLElement | null>(null);
 
 const documents = ref<DocumentRecord[]>([]);
 const trashedDocuments = ref<DocumentRecord[]>([]);
+
 const loading = ref(false);
+const extractingMetadata = ref(false);
 const searchQuery = ref("");
 
 const authors = ref("");
@@ -106,7 +122,9 @@ async function openAddForm() {
   await scrollToForm();
 }
 
-async function startEdit(document: DocumentRecord) {
+async function startEdit(
+  document: DocumentRecord
+) {
   editingDocumentId.value = document.id;
 
   authors.value = document.authors;
@@ -150,7 +168,78 @@ async function selectPdf() {
   }
 }
 
-async function openPdf(document: DocumentRecord) {
+async function extractPdfMetadata() {
+  if (!pdfPath.value) {
+    alert("先にPDFを選択してください");
+    return;
+  }
+
+  extractingMetadata.value = true;
+
+  try {
+    const result =
+      await window.ipcRenderer.invoke(
+        "document:extract-metadata",
+        pdfPath.value
+      ) as ExtractedDocumentMetadata;
+
+    if (result.authors) {
+      authors.value = result.authors;
+    }
+
+    if (result.year !== null) {
+      year.value = result.year;
+    }
+
+    if (result.title) {
+      title.value = result.title;
+    }
+
+    if (result.journal) {
+      journal.value = result.journal;
+    }
+
+    if (result.volume) {
+      volume.value = result.volume;
+    }
+
+    if (result.issue) {
+      issue.value = result.issue;
+    }
+
+    if (result.pages) {
+      pages.value = result.pages;
+    }
+
+    if (result.doi) {
+      doi.value = result.doi;
+    }
+
+    if (result.warning) {
+      alert(result.warning);
+    }
+  } catch (error) {
+    const message =
+      error instanceof Error
+        ? error.message
+        : String(error);
+
+    console.error(
+      "書誌情報の抽出に失敗しました:",
+      error
+    );
+
+    alert(
+      `書誌情報を取得できませんでした\n\n${message}`
+    );
+  } finally {
+    extractingMetadata.value = false;
+  }
+}
+
+async function openPdf(
+  document: DocumentRecord
+) {
   if (!document.pdf_path) {
     alert(
       "この文献にはPDFが登録されていません"
@@ -379,6 +468,7 @@ async function restoreDocument(
   }
 }
 
+// EntoLibの画面が開いたときは、文献一覧だけを読み込む
 onMounted(() => {
   loadDocuments();
 });
@@ -660,6 +750,21 @@ onMounted(() => {
             @click="selectPdf"
           >
             Select PDF
+          </button>
+
+          <button
+            type="button"
+            :disabled="
+              !pdfPath ||
+              extractingMetadata
+            "
+            @click="extractPdfMetadata"
+          >
+            {{
+              extractingMetadata
+                ? "Reading..."
+                : "Extract Metadata"
+            }}
           </button>
         </div>
       </label>

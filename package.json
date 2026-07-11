@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "better-sqlite3": "^12.11.1",
+    "unpdf": "^1.6.2",
     "vue": "^3.4.21"
   },
   "devDependencies": {
