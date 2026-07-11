@@ -79,3 +79,47 @@ th{
   border-radius: 6px;
   font-size: 14px;
 }
+.trash-button {
+  padding: 6px 10px;
+  border: 1px solid #b94a48;
+  border-radius: 5px;
+  background: white;
+  color: #b94a48;
+  cursor: pointer;
+}
+
+.trash-button:hover {
+  background: #b94a48;
+  color: white;
+}
+.view-tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.view-tabs button {
+  background: white;
+  color: #333333;
+  border: 1px solid #cccccc;
+}
+
+.view-tabs button.active {
+  background: #333333;
+  color: white;
+  border-color: #333333;
+}
+
+.restore-button {
+  padding: 6px 10px;
+  border: 1px solid #357a38;
+  border-radius: 5px;
+  background: white;
+  color: #357a38;
+  cursor: pointer;
+}
+
+.restore-button:hover {
+  background: #357a38;
+  color: white;
+}

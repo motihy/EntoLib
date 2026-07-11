@@ -1,7 +1,9 @@
 import {
   addDocument,
   getDocuments,
-  moveDocumentToTrash
+  moveDocumentToTrash,
+  getTrashedDocuments,
+  restoreDocument
 } from "./database/DatabaseManager";
 import { app, BrowserWindow, ipcMain } from 'electron'
 
@@ -74,19 +76,31 @@ app.on('activate', () => {
 })
 
 app.whenReady().then(() => {
+  // 文献を登録
   ipcMain.handle("document:add", (_, documentData) => {
     addDocument(documentData);
     return true;
   });
 
+  // 通常の文献一覧を取得
   ipcMain.handle("document:list", () => {
     return getDocuments();
   });
 
+  // 文献をゴミ箱へ移動
   ipcMain.handle("document:trash", (_, id: number) => {
     return moveDocumentToTrash(id);
   });
 
+  // ゴミ箱内の文献一覧を取得
+  ipcMain.handle("document:trash-list", () => {
+    return getTrashedDocuments();
+  });
+
+  // ゴミ箱から文献を復元
+  ipcMain.handle("document:restore", (_, id: number) => {
+    return restoreDocument(id);
+  });
+
   createWindow();
 });
-

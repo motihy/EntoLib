@@ -16,8 +16,13 @@ interface DocumentRecord {
   deleted_at: string | null;
 }
 
+type ViewMode = "library" | "trash";
+
+const currentView = ref<ViewMode>("library");
 const showForm = ref(false);
+
 const documents = ref<DocumentRecord[]>([]);
+const trashedDocuments = ref<DocumentRecord[]>([]);
 const loading = ref(false);
 const searchQuery = ref("");
 
@@ -31,13 +36,18 @@ const pages = ref("");
 const doi = ref("");
 
 const filteredDocuments = computed(() => {
+  const source =
+    currentView.value === "library"
+      ? documents.value
+      : trashedDocuments.value;
+
   const query = searchQuery.value.trim().toLocaleLowerCase();
 
   if (!query) {
-    return documents.value;
+    return source;
   }
 
-  return documents.value.filter((document) => {
+  return source.filter((document) => {
     const searchableValues = [
       document.authors,
       document.year,
@@ -61,13 +71,44 @@ async function loadDocuments() {
   loading.value = true;
 
   try {
-    documents.value = await window.ipcRenderer.invoke("document:list");
+    documents.value =
+      await window.ipcRenderer.invoke("document:list");
   } catch (error) {
     console.error("文献一覧の取得に失敗しました:", error);
     alert("文献一覧を取得できませんでした");
   } finally {
     loading.value = false;
   }
+}
+
+async function loadTrashedDocuments() {
+  loading.value = true;
+
+  try {
+    trashedDocuments.value =
+      await window.ipcRenderer.invoke("document:trash-list");
+  } catch (error) {
+    console.error("ゴミ箱の取得に失敗しました:", error);
+    alert("ゴミ箱を取得できませんでした");
+  } finally {
+    loading.value = false;
+  }
+}
+
+async function showLibraryView() {
+  currentView.value = "library";
+  showForm.value = false;
+  searchQuery.value = "";
+
+  await loadDocuments();
+}
+
+async function showTrashView() {
+  currentView.value = "trash";
+  showForm.value = false;
+  searchQuery.value = "";
+
+  await loadTrashedDocuments();
 }
 
 async function saveDocument() {
@@ -89,10 +130,6 @@ async function saveDocument() {
       pdf_path: ""
     });
 
-    await loadDocuments();
-
-    showForm.value = false;
-
     authors.value = "";
     year.value = null;
     title.value = "";
@@ -101,6 +138,10 @@ async function saveDocument() {
     issue.value = "";
     pages.value = "";
     doi.value = "";
+
+    showForm.value = false;
+
+    await loadDocuments();
 
     alert("保存しました");
   } catch (error) {
@@ -136,142 +177,203 @@ async function trashDocument(document: DocumentRecord) {
   }
 }
 
+async function restoreDocument(document: DocumentRecord) {
+  try {
+    const restored = await window.ipcRenderer.invoke(
+      "document:restore",
+      document.id
+    );
+
+    if (!restored) {
+      alert("文献を元に戻せませんでした");
+      return;
+    }
+
+    await loadTrashedDocuments();
+  } catch (error) {
+    console.error("文献の復元に失敗しました:", error);
+    alert("文献の復元に失敗しました");
+  }
+}
+
 onMounted(() => {
   loadDocuments();
 });
 </script>
 
-
 <template>
   <div class="container">
-
     <h1>EntoLib</h1>
 
-   <div class="toolbar">
-  <input
-    v-model="searchQuery"
-    class="search-input"
-    type="search"
-    placeholder="Search authors, title, journal, DOI..."
-  />
-
-  <button @click="showForm = true">
-    Add Paper
-  </button>
-</div>
-
-    <table>
-     <div v-if="showForm" class="form">
-
-     <h2>Add Paper</h2>
-
-     <label>Authors</label>
-     <input type="text" v-model="authors">
-
-     <label>Year</label>
-     <input
-     type="number"
-     v-model.number="year"
-     >
-
-     <label>Title</label>
-     <input type="text" v-model="title">
-
-     <label>Journal</label>
-     <input type="text" v-model="journal">
-     <label>
-      Volume
-     <input type="text" v-model="volume">
-      </label>
-
-     <label>
-     Issue
-     <input type="text" v-model="issue">
-     </label>
-
-     <label>
-     Pages
-     <input
-     type="text"
-      v-model="pages"
-      placeholder="例: 123–145"
-     >
-     </label>
-
-     <label>DOI</label>
-     <input type="text" v-model="doi">
-
-     <div class="buttons">
-      <button @click="saveDocument">
-     Save
-     </button>
-     <button @click="showForm = false">Cancel</button>
-     </div>
-
-</div>
-      
-      <thead>
-      <tr>
-     <th>Authors</th>
-     <th>Year</th>
-     <th>Title</th>
-     <th>Journal</th>
-     <th>Volume</th>
-     <th>Pages</th>
-     <th>Actions</th>
-     </tr>
-     </thead>
-
-      <tbody>
-  <tr v-if="loading">
-   <td colspan="7">読み込み中...</td>
-  </tr>
-
-  <tr v-else-if="filteredDocuments.length === 0">
-    <td colspan="7">
-      {{
-        searchQuery.trim()
-          ? "一致する文献がありません"
-          : "まだ文献はありません"
-      }}
-    </td>
-  </tr>
-
-  <template v-else>
-  <tr
-    v-for="document in filteredDocuments"
-    :key="document.id"
-  >
-    <td>{{ document.authors }}</td>
-
-    <td>{{ document.year ?? "" }}</td>
-
-    <td>{{ document.title }}</td>
-
-    <td>{{ document.journal ?? "" }}</td>
-
-    <td>
-      {{ document.volume ?? "" }}
-      <span v-if="document.issue">
-        ({{ document.issue }})
-      </span>
-    </td>
-
-    <td>{{ document.pages ?? "" }}</td>
-
-    <td>
+    <div class="view-tabs">
       <button
-        class="trash-button"
         type="button"
-        @click="trashDocument(document)"
+        :class="{ active: currentView === 'library' }"
+        @click="showLibraryView"
+      >
+        Library
+      </button>
+
+      <button
+        type="button"
+        :class="{ active: currentView === 'trash' }"
+        @click="showTrashView"
       >
         Trash
       </button>
-    </td>
-  </tr>
-</template>
-</tbody>
-       </table>
+    </div>
 
+    <div class="toolbar">
+      <input
+        v-model="searchQuery"
+        class="search-input"
+        type="search"
+        :placeholder="
+          currentView === 'library'
+            ? 'Search authors, title, journal, DOI...'
+            : 'Search trash...'
+        "
+      />
+
+      <button
+        v-if="currentView === 'library'"
+        type="button"
+        @click="showForm = true"
+      >
+        Add Paper
+      </button>
+    </div>
+
+    <table>
+      <thead>
+        <tr>
+          <th>Authors</th>
+          <th>Year</th>
+          <th>Title</th>
+          <th>Journal</th>
+          <th>Volume</th>
+          <th>Pages</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+
+      <tbody>
+        <tr v-if="loading">
+          <td colspan="7">読み込み中...</td>
+        </tr>
+
+        <tr v-else-if="filteredDocuments.length === 0">
+          <td colspan="7">
+            {{
+              searchQuery.trim()
+                ? "一致する文献がありません"
+                : currentView === "library"
+                  ? "まだ文献はありません"
+                  : "ゴミ箱は空です"
+            }}
+          </td>
+        </tr>
+
+        <template v-else>
+          <tr
+            v-for="document in filteredDocuments"
+            :key="document.id"
+          >
+            <td>{{ document.authors }}</td>
+            <td>{{ document.year ?? "" }}</td>
+            <td>{{ document.title }}</td>
+            <td>{{ document.journal ?? "" }}</td>
+
+            <td>
+              {{ document.volume ?? "" }}
+              <span v-if="document.issue">
+                ({{ document.issue }})
+              </span>
+            </td>
+
+            <td>{{ document.pages ?? "" }}</td>
+
+            <td>
+              <button
+                v-if="currentView === 'library'"
+                class="trash-button"
+                type="button"
+                @click="trashDocument(document)"
+              >
+                Trash
+              </button>
+
+              <button
+                v-else
+                class="restore-button"
+                type="button"
+                @click="restoreDocument(document)"
+              >
+                Restore
+              </button>
+            </td>
+          </tr>
+        </template>
+      </tbody>
+    </table>
+
+    <div
+      v-if="showForm && currentView === 'library'"
+      class="form"
+    >
+      <label>
+        Authors
+        <input v-model="authors" type="text" />
+      </label>
+
+      <label>
+        Year
+        <input v-model.number="year" type="number" />
+      </label>
+
+      <label>
+        Title
+        <input v-model="title" type="text" />
+      </label>
+
+      <label>
+        Journal
+        <input v-model="journal" type="text" />
+      </label>
+
+      <label>
+        Volume
+        <input v-model="volume" type="text" />
+      </label>
+
+      <label>
+        Issue
+        <input v-model="issue" type="text" />
+      </label>
+
+      <label>
+        Pages
+        <input
+          v-model="pages"
+          type="text"
+          placeholder="例: 123–145"
+        />
+      </label>
+
+      <label>
+        DOI
+        <input v-model="doi" type="text" />
+      </label>
+
+      <div class="buttons">
+        <button type="button" @click="saveDocument">
+          Save
+        </button>
+
+        <button type="button" @click="showForm = false">
+          Cancel
+        </button>
+      </div>
+    </div>
   </div>
 </template>
