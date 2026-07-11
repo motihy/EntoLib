@@ -1,8 +1,9 @@
 import {
   addDocument,
+  findDocumentByFileHash,
   getDocuments,
-  moveDocumentToTrash,
   getTrashedDocuments,
+  moveDocumentToTrash,
   restoreDocument,
   updateDocument
 } from "./database/DatabaseManager";
@@ -20,9 +21,9 @@ import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import {
   calculateFileHash,
-  importPdf
+  importPdf,
+  removeManagedPdf
 } from "./services/PdfStorage";
-
 const require = createRequire(import.meta.url)
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -87,26 +88,60 @@ app.on('activate', () => {
 
 app.whenReady().then(() => {
   // 文献を登録
-  ipcMain.handle(
+ipcMain.handle(
   "document:add",
   async (_, documentData) => {
-    const managedPdfPath = await importPdf(
-      documentData.pdf_path
-    );
+    const sourcePdfPath =
+      documentData.pdf_path;
 
-    const fileHash = managedPdfPath
-      ? await calculateFileHash(managedPdfPath)
+    const fileHash = sourcePdfPath
+      ? await calculateFileHash(sourcePdfPath)
       : null;
 
-    console.log("PDF SHA-256:", fileHash);
+    if (fileHash) {
+      const duplicate =
+        findDocumentByFileHash(fileHash);
 
-    addDocument({
-      ...documentData,
-      pdf_path: managedPdfPath,
-      file_hash: fileHash
-    });
+      if (duplicate) {
+        const location = duplicate.deleted_at
+          ? "ゴミ箱"
+          : "Library";
 
-    return true;
+        throw new Error(
+          `同じPDFがすでに登録されています。\n\n` +
+          `保存場所: ${location}\n` +
+          `タイトル: ${duplicate.title}\n` +
+          `著者: ${duplicate.authors}`
+        );
+      }
+    }
+
+    const managedPdfPath =
+      await importPdf(sourcePdfPath);
+
+    // 元ファイルと保存先が異なる場合、新しくコピーされたPDF
+    const pdfWasCopied =
+      Boolean(sourcePdfPath) &&
+      sourcePdfPath !== managedPdfPath;
+
+    try {
+      addDocument({
+        ...documentData,
+        pdf_path: managedPdfPath,
+        file_hash: fileHash
+      });
+
+      return true;
+    } catch (error) {
+      // DOI重複などでDB登録に失敗した場合、今回コピーしたPDFを削除
+      if (pdfWasCopied) {
+        await removeManagedPdf(
+          managedPdfPath
+        );
+      }
+
+      throw error;
+    }
   }
 );
 
@@ -133,15 +168,34 @@ app.whenReady().then(() => {
  ipcMain.handle(
   "document:update",
   async (_, documentData) => {
+    const fileHash = documentData.pdf_path
+      ? await calculateFileHash(documentData.pdf_path)
+      : null;
+
+    if (fileHash) {
+      const duplicate =
+        findDocumentByFileHash(
+          fileHash,
+          documentData.id
+        );
+
+      if (duplicate) {
+        const location = duplicate.deleted_at
+          ? "ゴミ箱"
+          : "Library";
+
+        throw new Error(
+          `同じPDFが別の文献に登録されています。\n\n` +
+          `保存場所: ${location}\n` +
+          `タイトル: ${duplicate.title}\n` +
+          `著者: ${duplicate.authors}`
+        );
+      }
+    }
+
     const managedPdfPath = await importPdf(
       documentData.pdf_path
     );
-
-    const fileHash = managedPdfPath
-      ? await calculateFileHash(managedPdfPath)
-      : null;
-
-    console.log("PDF SHA-256:", fileHash);
 
     return updateDocument({
       ...documentData,
