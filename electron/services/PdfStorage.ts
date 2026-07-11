@@ -1,11 +1,15 @@
 import { app } from "electron";
-import { randomUUID } from "node:crypto";
-import { copyFile, mkdir } from "node:fs/promises";
+import {
+  createHash,
+  randomUUID
+} from "node:crypto";
+import { createReadStream } from "node:fs";
+import {
+  copyFile,
+  mkdir
+} from "node:fs/promises";
 import path from "node:path";
 
-/**
- * EntoLibが管理するPDF保存フォルダーを返す
- */
 export function getPdfStorageDirectory(): string {
   return path.join(
     app.getPath("documents"),
@@ -15,9 +19,6 @@ export function getPdfStorageDirectory(): string {
   );
 }
 
-/**
- * PDFがすでにEntoLib管理フォルダー内にあるか確認する
- */
 function isManagedPdf(pdfPath: string): boolean {
   const storageDirectory = path.resolve(
     getPdfStorageDirectory()
@@ -33,11 +34,27 @@ function isManagedPdf(pdfPath: string): boolean {
   );
 }
 
-/**
- * 選択されたPDFをEntoLib管理フォルダーへコピーする
- *
- * 戻り値はコピー後のPDFパス
- */
+// PDFのSHA-256ハッシュを計算
+export function calculateFileHash(
+  pdfPath: string
+): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const hash = createHash("sha256");
+    const stream = createReadStream(pdfPath);
+
+    stream.on("error", reject);
+
+    stream.on("data", (chunk) => {
+      hash.update(chunk);
+    });
+
+    stream.on("end", () => {
+      resolve(hash.digest("hex"));
+    });
+  });
+}
+
+// PDFをEntoLib管理フォルダーへコピー
 export async function importPdf(
   sourcePath: string
 ): Promise<string> {
@@ -54,7 +71,7 @@ export async function importPdf(
     );
   }
 
-  // すでにEntoLib管理下ならコピーしない
+  // すでにEntoLib管理フォルダー内ならコピーしない
   if (isManagedPdf(sourcePath)) {
     return sourcePath;
   }

@@ -18,7 +18,10 @@ console.log("MAIN.TS LOADED");
 import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
-import { importPdf } from "./services/PdfStorage";
+import {
+  calculateFileHash,
+  importPdf
+} from "./services/PdfStorage";
 
 const require = createRequire(import.meta.url)
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -91,9 +94,16 @@ app.whenReady().then(() => {
       documentData.pdf_path
     );
 
+    const fileHash = managedPdfPath
+      ? await calculateFileHash(managedPdfPath)
+      : null;
+
+    console.log("PDF SHA-256:", fileHash);
+
     addDocument({
       ...documentData,
-      pdf_path: managedPdfPath
+      pdf_path: managedPdfPath,
+      file_hash: fileHash
     });
 
     return true;
@@ -127,9 +137,16 @@ app.whenReady().then(() => {
       documentData.pdf_path
     );
 
+    const fileHash = managedPdfPath
+      ? await calculateFileHash(managedPdfPath)
+      : null;
+
+    console.log("PDF SHA-256:", fileHash);
+
     return updateDocument({
       ...documentData,
-      pdf_path: managedPdfPath
+      pdf_path: managedPdfPath,
+      file_hash: fileHash
     });
   }
 );
