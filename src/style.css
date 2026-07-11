@@ -123,3 +123,25 @@ th{
   background: #357a38;
   color: white;
 }
+.action-buttons {
+  display: flex;
+  gap: 6px;
+}
+
+.edit-button {
+  padding: 6px 10px;
+  border: 1px solid #356da8;
+  border-radius: 5px;
+  background: white;
+  color: #356da8;
+  cursor: pointer;
+}
+
+.edit-button:hover {
+  background: #356da8;
+  color: white;
+}
+
+.form h2 {
+  margin-top: 0;
+}

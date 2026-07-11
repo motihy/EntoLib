@@ -20,6 +20,7 @@ type ViewMode = "library" | "trash";
 
 const currentView = ref<ViewMode>("library");
 const showForm = ref(false);
+const editingDocumentId = ref<number | null>(null);
 
 const documents = ref<DocumentRecord[]>([]);
 const trashedDocuments = ref<DocumentRecord[]>([]);
@@ -67,6 +68,44 @@ const filteredDocuments = computed(() => {
   });
 });
 
+function resetForm() {
+  authors.value = "";
+  year.value = null;
+  title.value = "";
+  journal.value = "";
+  volume.value = "";
+  issue.value = "";
+  pages.value = "";
+  doi.value = "";
+}
+
+function openAddForm() {
+  editingDocumentId.value = null;
+  resetForm();
+  showForm.value = true;
+}
+
+function startEdit(document: DocumentRecord) {
+  editingDocumentId.value = document.id;
+
+  authors.value = document.authors;
+  year.value = document.year;
+  title.value = document.title;
+  journal.value = document.journal ?? "";
+  volume.value = document.volume ?? "";
+  issue.value = document.issue ?? "";
+  pages.value = document.pages ?? "";
+  doi.value = document.doi ?? "";
+
+  showForm.value = true;
+}
+
+function closeForm() {
+  showForm.value = false;
+  editingDocumentId.value = null;
+  resetForm();
+}
+
 async function loadDocuments() {
   loading.value = true;
 
@@ -97,16 +136,16 @@ async function loadTrashedDocuments() {
 
 async function showLibraryView() {
   currentView.value = "library";
-  showForm.value = false;
   searchQuery.value = "";
+  closeForm();
 
   await loadDocuments();
 }
 
 async function showTrashView() {
   currentView.value = "trash";
-  showForm.value = false;
   searchQuery.value = "";
+  closeForm();
 
   await loadTrashedDocuments();
 }
@@ -117,36 +156,47 @@ async function saveDocument() {
     return;
   }
 
+  const documentData = {
+    authors: authors.value.trim(),
+    year: year.value,
+    title: title.value.trim(),
+    journal: journal.value.trim(),
+    volume: volume.value.trim(),
+    issue: issue.value.trim(),
+    pages: pages.value.trim(),
+    doi: doi.value.trim() || null
+  };
+
+  const isEditing = editingDocumentId.value !== null;
+
   try {
-    await window.ipcRenderer.invoke("document:add", {
-      authors: authors.value.trim(),
-      year: year.value,
-      title: title.value.trim(),
-      journal: journal.value.trim(),
-      volume: volume.value.trim(),
-      issue: issue.value.trim(),
-      pages: pages.value.trim(),
-      doi: doi.value.trim() || null,
-      pdf_path: ""
-    });
+    if (isEditing) {
+      const updated = await window.ipcRenderer.invoke(
+        "document:update",
+        {
+          id: editingDocumentId.value,
+          ...documentData
+        }
+      );
 
-    authors.value = "";
-    year.value = null;
-    title.value = "";
-    journal.value = "";
-    volume.value = "";
-    issue.value = "";
-    pages.value = "";
-    doi.value = "";
+      if (!updated) {
+        alert("文献を更新できませんでした");
+        return;
+      }
+    } else {
+      await window.ipcRenderer.invoke("document:add", {
+        ...documentData,
+        pdf_path: ""
+      });
+    }
 
-    showForm.value = false;
-
+    closeForm();
     await loadDocuments();
 
-    alert("保存しました");
+    alert(isEditing ? "更新しました" : "保存しました");
   } catch (error) {
-    console.error("保存に失敗しました:", error);
-    alert("保存に失敗しました");
+    console.error("文献の保存に失敗しました:", error);
+    alert("文献を保存できませんでした");
   }
 }
 
@@ -238,7 +288,7 @@ onMounted(() => {
       <button
         v-if="currentView === 'library'"
         type="button"
-        @click="showForm = true"
+        @click="openAddForm"
       >
         Add Paper
       </button>
@@ -294,14 +344,26 @@ onMounted(() => {
             <td>{{ document.pages ?? "" }}</td>
 
             <td>
-              <button
+              <div
                 v-if="currentView === 'library'"
-                class="trash-button"
-                type="button"
-                @click="trashDocument(document)"
+                class="action-buttons"
               >
-                Trash
-              </button>
+                <button
+                  class="edit-button"
+                  type="button"
+                  @click="startEdit(document)"
+                >
+                  Edit
+                </button>
+
+                <button
+                  class="trash-button"
+                  type="button"
+                  @click="trashDocument(document)"
+                >
+                  Trash
+                </button>
+              </div>
 
               <button
                 v-else
@@ -321,6 +383,14 @@ onMounted(() => {
       v-if="showForm && currentView === 'library'"
       class="form"
     >
+      <h2>
+        {{
+          editingDocumentId === null
+            ? "Add Paper"
+            : "Edit Paper"
+        }}
+      </h2>
+
       <label>
         Authors
         <input v-model="authors" type="text" />
@@ -367,10 +437,14 @@ onMounted(() => {
 
       <div class="buttons">
         <button type="button" @click="saveDocument">
-          Save
+          {{
+            editingDocumentId === null
+              ? "Save"
+              : "Update"
+          }}
         </button>
 
-        <button type="button" @click="showForm = false">
+        <button type="button" @click="closeForm">
           Cancel
         </button>
       </div>

@@ -3,7 +3,8 @@ import {
   getDocuments,
   moveDocumentToTrash,
   getTrashedDocuments,
-  restoreDocument
+  restoreDocument,
+  updateDocument
 } from "./database/DatabaseManager";
 import { app, BrowserWindow, ipcMain } from 'electron'
 
@@ -101,6 +102,9 @@ app.whenReady().then(() => {
   ipcMain.handle("document:restore", (_, id: number) => {
     return restoreDocument(id);
   });
-
+  // 文献情報を更新
+  ipcMain.handle("document:update", (_, documentData) => {
+    return updateDocument(documentData);
+  });
   createWindow();
 });
