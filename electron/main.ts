@@ -1,4 +1,4 @@
-import {
+﻿import {
   app,
   BrowserWindow,
   dialog,
@@ -33,6 +33,15 @@ import {
   importDocumentsFromPdfs
 } from "./services/DocumentImportService";
 
+import {
+  createTaxon,
+  getLinkedDocumentIds,
+  linkDocumentToTaxon,
+  listTaxa,
+  trashTaxon,
+  unlinkDocumentFromTaxon,
+  updateTaxon
+} from "./database/TaxonomyManager";
 const __dirname = path.dirname(
   fileURLToPath(import.meta.url)
 );
@@ -367,5 +376,41 @@ app.whenReady().then(() => {
     }
   );
 
+
+  // Taxonomy IPC
+  ipcMain.handle("taxon:list", (_, search: string = "") => {
+    return listTaxa(search);
+  });
+
+  ipcMain.handle("taxon:create", (_, taxonData) => {
+    return createTaxon(taxonData);
+  });
+
+  ipcMain.handle("taxon:update", (_, id: number, taxonData) => {
+    return updateTaxon(id, taxonData);
+  });
+
+  ipcMain.handle("taxon:trash", (_, id: number) => {
+    return trashTaxon(id);
+  });
+
+  ipcMain.handle("taxon:linked-document-ids", (_, taxonId: number) => {
+    return getLinkedDocumentIds(taxonId);
+  });
+
+  ipcMain.handle(
+    "taxon:link-document",
+    (_, taxonId: number, documentId: number) => {
+      return linkDocumentToTaxon(taxonId, documentId);
+    }
+  );
+
+  ipcMain.handle(
+    "taxon:unlink-document",
+    (_, taxonId: number, documentId: number) => {
+      return unlinkDocumentFromTaxon(taxonId, documentId);
+    }
+  );
   createWindow();
 });
+

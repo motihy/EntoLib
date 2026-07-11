@@ -1,4 +1,4 @@
-# Logs
+﻿# Logs
 logs
 *.log
 npm-debug.log*
@@ -16,7 +16,7 @@ dist-ssr/
 dist-electron/
 
 # Database
-database/
+/database/
 *.db
 *.sqlite
 *.sqlite3
@@ -39,3 +39,4 @@ Thumbs.db
 *.njsproj
 *.sln
 *.sw?
+taxonomy_patch_backup_*/

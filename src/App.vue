@@ -1,10 +1,12 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 import {
   computed,
   nextTick,
   onMounted,
   ref
 } from "vue";
+
+import TaxonomyView from "./components/TaxonomyView.vue";
 
 interface DocumentRecord {
   id: number;
@@ -69,7 +71,7 @@ interface BulkReviewItem extends BulkImportMetadataDraft {
   error: string;
 }
 
-type ViewMode = "library" | "trash" | "review";
+type ViewMode = "library" | "trash" | "review" | "taxonomy";
 
 const currentView = ref<ViewMode>("library");
 const showForm = ref(false);
@@ -760,6 +762,11 @@ async function restoreDocument(
   }
 }
 
+function showTaxonomyView() {
+  currentView.value = "taxonomy";
+  searchQuery.value = "";
+  closeForm();
+}
 onMounted(() => {
   loadDocuments();
 });
@@ -799,11 +806,18 @@ onMounted(() => {
       >
         Review ({{ reviewQueue.length }})
       </button>
+      <button
+        type="button"
+        :class="{ active: currentView === 'taxonomy' }"
+        @click="showTaxonomyView"
+      >
+        Taxonomy
+      </button>
     </div>
 
     <div class="toolbar">
       <input
-        v-if="currentView !== 'review'"
+        v-if="currentView !== 'review' && currentView !== 'taxonomy'"
         v-model="searchQuery"
         class="search-input"
         type="search"
@@ -836,9 +850,10 @@ onMounted(() => {
         Add Paper
       </button>
     </div>
+    <TaxonomyView v-if="currentView === 'taxonomy'" />
 
     <section
-      v-if="bulkImportResults.length > 0"
+      v-if="currentView !== 'taxonomy' && bulkImportResults.length > 0"
       class="bulk-results"
     >
       <div class="bulk-results-header">
@@ -1024,7 +1039,7 @@ onMounted(() => {
       </div>
     </section>
 
-    <table v-if="currentView !== 'review'">
+    <table v-if="currentView !== 'review' && currentView !== 'taxonomy'">
       <thead>
         <tr>
           <th>Authors</th>
@@ -1442,3 +1457,4 @@ onMounted(() => {
 }
 
 </style>
+
