@@ -18,6 +18,7 @@ console.log("MAIN.TS LOADED");
 import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
+import { importPdf } from "./services/PdfStorage";
 
 const require = createRequire(import.meta.url)
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -83,10 +84,21 @@ app.on('activate', () => {
 
 app.whenReady().then(() => {
   // 文献を登録
-  ipcMain.handle("document:add", (_, documentData) => {
-    addDocument(documentData);
+  ipcMain.handle(
+  "document:add",
+  async (_, documentData) => {
+    const managedPdfPath = await importPdf(
+      documentData.pdf_path
+    );
+
+    addDocument({
+      ...documentData,
+      pdf_path: managedPdfPath
+    });
+
     return true;
-  });
+  }
+);
 
   // 通常の文献一覧を取得
   ipcMain.handle("document:list", () => {
@@ -108,9 +120,19 @@ app.whenReady().then(() => {
     return restoreDocument(id);
   });
   // 文献情報を更新
-  ipcMain.handle("document:update", (_, documentData) => {
-    return updateDocument(documentData);
-  });
+ ipcMain.handle(
+  "document:update",
+  async (_, documentData) => {
+    const managedPdfPath = await importPdf(
+      documentData.pdf_path
+    );
+
+    return updateDocument({
+      ...documentData,
+      pdf_path: managedPdfPath
+    });
+  }
+);
     // PDFファイルを選択
   ipcMain.handle("document:select-pdf", async () => {
     const result = await dialog.showOpenDialog({

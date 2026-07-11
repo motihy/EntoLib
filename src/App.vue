@@ -1,5 +1,10 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import {
+  computed,
+  nextTick,
+  onMounted,
+  ref
+} from "vue";
 
 interface DocumentRecord {
   id: number;
@@ -21,6 +26,7 @@ type ViewMode = "library" | "trash";
 const currentView = ref<ViewMode>("library");
 const showForm = ref(false);
 const editingDocumentId = ref<number | null>(null);
+const formSection = ref<HTMLElement | null>(null);
 
 const documents = ref<DocumentRecord[]>([]);
 const trashedDocuments = ref<DocumentRecord[]>([]);
@@ -83,34 +89,24 @@ function resetForm() {
   pdfPath.value = "";
 }
 
-function openAddForm() {
+async function scrollToForm() {
+  await nextTick();
+
+  formSection.value?.scrollIntoView({
+    behavior: "smooth",
+    block: "start"
+  });
+}
+
+async function openAddForm() {
   editingDocumentId.value = null;
   resetForm();
   showForm.value = true;
+
+  await scrollToForm();
 }
 
-function startEdit(document: DocumentRecord) 
-async function openPdf(document: DocumentRecord) {
-  if (!document.pdf_path) {
-    alert("この文献にはPDFが登録されていません");
-    return;
-  }
-
-  try {
-    const result = await window.ipcRenderer.invoke(
-      "document:open-pdf",
-      document.pdf_path
-    );
-
-    if (!result.success) {
-      alert(`PDFを開けませんでした\n\n${result.message}`);
-    }
-  } catch (error) {
-    console.error("PDFを開けませんでした:", error);
-    alert("PDFを開けませんでした");
-  }
-}
-{
+async function startEdit(document: DocumentRecord) {
   editingDocumentId.value = document.id;
 
   authors.value = document.authors;
@@ -121,11 +117,11 @@ async function openPdf(document: DocumentRecord) {
   issue.value = document.issue ?? "";
   pages.value = document.pages ?? "";
   doi.value = document.doi ?? "";
-
-  // 保存されているPDFのパスを入力欄へ表示
   pdfPath.value = document.pdf_path ?? "";
 
   showForm.value = true;
+
+  await scrollToForm();
 }
 
 function closeForm() {
@@ -151,6 +147,36 @@ async function selectPdf() {
     );
 
     alert("PDFを選択できませんでした");
+  }
+}
+
+async function openPdf(document: DocumentRecord) {
+  if (!document.pdf_path) {
+    alert(
+      "この文献にはPDFが登録されていません"
+    );
+    return;
+  }
+
+  try {
+    const result =
+      await window.ipcRenderer.invoke(
+        "document:open-pdf",
+        document.pdf_path
+      );
+
+    if (!result.success) {
+      alert(
+        `PDFを開けませんでした\n\n${result.message}`
+      );
+    }
+  } catch (error) {
+    console.error(
+      "PDFを開けませんでした:",
+      error
+    );
+
+    alert("PDFを開けませんでした");
   }
 }
 
@@ -218,21 +244,20 @@ async function saveDocument() {
     alert(
       "AuthorsとTitleを入力してください"
     );
-
     return;
   }
 
- const documentData = {
-  authors: authors.value.trim(),
-  year: year.value,
-  title: title.value.trim(),
-  journal: journal.value.trim(),
-  volume: volume.value.trim(),
-  issue: issue.value.trim(),
-  pages: pages.value.trim(),
-  doi: doi.value.trim() || null,
-  pdf_path: pdfPath.value
-};
+  const documentData = {
+    authors: authors.value.trim(),
+    year: year.value,
+    title: title.value.trim(),
+    journal: journal.value.trim(),
+    volume: volume.value.trim(),
+    issue: issue.value.trim(),
+    pages: pages.value.trim(),
+    doi: doi.value.trim() || null,
+    pdf_path: pdfPath.value
+  };
 
   const isEditing =
     editingDocumentId.value !== null;
@@ -240,30 +265,28 @@ async function saveDocument() {
   try {
     if (isEditing) {
       const updated =
-      await window.ipcRenderer.invoke(
-  "document:add",
-  documentData
-);
+        await window.ipcRenderer.invoke(
+          "document:update",
+          {
+            id: editingDocumentId.value,
+            ...documentData
+          }
+        );
 
       if (!updated) {
         alert(
           "文献を更新できませんでした"
         );
-
         return;
       }
     } else {
       await window.ipcRenderer.invoke(
         "document:add",
-        {
-          ...documentData,
-          pdf_path: pdfPath.value
-        }
+        documentData
       );
     }
 
     closeForm();
-
     await loadDocuments();
 
     alert(
@@ -272,13 +295,18 @@ async function saveDocument() {
         : "保存しました"
     );
   } catch (error) {
+    const message =
+      error instanceof Error
+        ? error.message
+        : String(error);
+
     console.error(
       "文献の保存に失敗しました:",
       error
     );
 
     alert(
-      "文献を保存できませんでした"
+      `文献を保存できませんでした\n\n${message}`
     );
   }
 }
@@ -305,7 +333,6 @@ async function trashDocument(
       alert(
         "文献をゴミ箱へ移動できませんでした"
       );
-
       return;
     }
 
@@ -336,7 +363,6 @@ async function restoreDocument(
       alert(
         "文献を元に戻せませんでした"
       );
-
       return;
     }
 
@@ -366,8 +392,7 @@ onMounted(() => {
       <button
         type="button"
         :class="{
-          active:
-            currentView === 'library'
+          active: currentView === 'library'
         }"
         @click="showLibraryView"
       >
@@ -377,8 +402,7 @@ onMounted(() => {
       <button
         type="button"
         :class="{
-          active:
-            currentView === 'trash'
+          active: currentView === 'trash'
         }"
         @click="showTrashView"
       >
@@ -399,9 +423,7 @@ onMounted(() => {
       />
 
       <button
-        v-if="
-          currentView === 'library'
-        "
+        v-if="currentView === 'library'"
         type="button"
         @click="openAddForm"
       >
@@ -438,8 +460,7 @@ onMounted(() => {
             {{
               searchQuery.trim()
                 ? "一致する文献がありません"
-                : currentView ===
-                    "library"
+                : currentView === "library"
                   ? "まだ文献はありません"
                   : "ゴミ箱は空です"
             }}
@@ -448,9 +469,7 @@ onMounted(() => {
 
         <template v-else>
           <tr
-            v-for="
-              document in filteredDocuments
-            "
+            v-for="document in filteredDocuments"
             :key="document.id"
           >
             <td>
@@ -466,19 +485,13 @@ onMounted(() => {
             </td>
 
             <td>
-              {{
-                document.journal ?? ""
-              }}
+              {{ document.journal ?? "" }}
             </td>
 
             <td>
-              {{
-                document.volume ?? ""
-              }}
+              {{ document.volume ?? "" }}
 
-              <span
-                v-if="document.issue"
-              >
+              <span v-if="document.issue">
                 ({{ document.issue }})
               </span>
             </td>
@@ -487,48 +500,56 @@ onMounted(() => {
               {{ document.pages ?? "" }}
             </td>
 
-           <td>{{ document.pages ?? "" }}</td>
+            <td>
+              <div
+                v-if="
+                  currentView === 'library'
+                "
+                class="action-buttons"
+              >
+                <button
+                  class="open-button"
+                  type="button"
+                  :disabled="
+                    !document.pdf_path
+                  "
+                  @click="openPdf(document)"
+                >
+                  Open PDF
+                </button>
 
-<td>
-  <div
-    v-if="currentView === 'library'"
-    class="action-buttons"
-  >
-    <button
-      class="open-button"
-      type="button"
-      :disabled="!document.pdf_path"
-      @click="openPdf(document)"
-    >
-      Open PDF
-    </button>
+                <button
+                  class="edit-button"
+                  type="button"
+                  @click="
+                    startEdit(document)
+                  "
+                >
+                  Edit
+                </button>
 
-    <button
-      class="edit-button"
-      type="button"
-      @click="startEdit(document)"
-    >
-      Edit
-    </button>
+                <button
+                  class="trash-button"
+                  type="button"
+                  @click="
+                    trashDocument(document)
+                  "
+                >
+                  Trash
+                </button>
+              </div>
 
-    <button
-      class="trash-button"
-      type="button"
-      @click="trashDocument(document)"
-    >
-      Trash
-    </button>
-  </div>
-
-  <button
-    v-else
-    class="restore-button"
-    type="button"
-    @click="restoreDocument(document)"
-  >
-    Restore
-  </button>
-</td>
+              <button
+                v-else
+                class="restore-button"
+                type="button"
+                @click="
+                  restoreDocument(document)
+                "
+              >
+                Restore
+              </button>
+            </td>
           </tr>
         </template>
       </tbody>
@@ -539,6 +560,7 @@ onMounted(() => {
         showForm &&
         currentView === 'library'
       "
+      ref="formSection"
       class="form"
     >
       <h2>
@@ -622,25 +644,25 @@ onMounted(() => {
         />
       </label>
 
-     <label>
-  PDF
+      <label>
+        PDF
 
-  <div class="pdf-select-row">
-    <input
-      v-model="pdfPath"
-      type="text"
-      readonly
-      placeholder="PDFは選択されていません"
-    />
+        <div class="pdf-select-row">
+          <input
+            v-model="pdfPath"
+            type="text"
+            readonly
+            placeholder="PDFは選択されていません"
+          />
 
-    <button
-      type="button"
-      @click="selectPdf"
-    >
-      Select PDF
-    </button>
-  </div>
-</label>
+          <button
+            type="button"
+            @click="selectPdf"
+          >
+            Select PDF
+          </button>
+        </div>
+      </label>
 
       <div class="buttons">
         <button
