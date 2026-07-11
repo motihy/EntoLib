@@ -178,3 +178,23 @@ th{
   opacity: 0.4;
   cursor: not-allowed;
 }
+
+/* EntoLib backup toolbar */
+.backup-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin: -44px 0 18px;
+}
+
+.backup-toolbar button {
+  white-space: nowrap;
+}
+
+@media (max-width: 760px) {
+  .backup-toolbar {
+    justify-content: flex-start;
+    margin: 0 0 18px;
+    flex-wrap: wrap;
+  }
+}

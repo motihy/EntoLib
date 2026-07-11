@@ -42,6 +42,12 @@ import {
   unlinkDocumentFromTaxon,
   updateTaxon
 } from "./database/TaxonomyManager";
+
+import {
+  createEntoLibBackup,
+  restoreEntoLibBackup
+} from "./services/BackupService";
+
 const __dirname = path.dirname(
   fileURLToPath(import.meta.url)
 );
@@ -411,6 +417,103 @@ app.whenReady().then(() => {
       return unlinkDocumentFromTaxon(taxonId, documentId);
     }
   );
-  createWindow();
+    /* EntoLib backup */
+  ipcMain.handle("backup:create", async () => {
+    const backupName =
+      "EntoLib-backup-" +
+      new Date()
+        .toISOString()
+        .replace(/[-:]/g, "")
+        .replace("T", "-")
+        .slice(0, 15) +
+      ".zip";
+
+    const result = await dialog.showSaveDialog({
+      title: "EntoLibバックアップの保存先",
+      defaultPath: path.join(
+        app.getPath("documents"),
+        backupName
+      ),
+      filters: [
+        {
+          name: "EntoLib backup",
+          extensions: ["zip"]
+        }
+      ]
+    });
+
+    if (result.canceled || !result.filePath) {
+      return { success: false, canceled: true };
+    }
+
+    return createEntoLibBackup(result.filePath);
+  });
+
+  ipcMain.handle("backup:restore", async () => {
+    const selection = await dialog.showOpenDialog({
+      title: "EntoLibバックアップを選択",
+      properties: ["openFile"],
+      filters: [
+        {
+          name: "EntoLib backup",
+          extensions: ["zip"]
+        }
+      ]
+    });
+
+    if (selection.canceled || selection.filePaths.length === 0) {
+      return { success: false, canceled: true };
+    }
+
+    const confirmation = await dialog.showMessageBox({
+      type: "warning",
+      title: "バックアップを復元",
+      message: "現在のデータを選択したバックアップで置き換えます。",
+      detail:
+        "文献データベースと管理PDFが置き換わります。続行しますか？",
+      buttons: ["キャンセル", "復元する"],
+      defaultId: 0,
+      cancelId: 0,
+      noLink: true
+    });
+
+    if (confirmation.response !== 1) {
+      return { success: false, canceled: true };
+    }
+
+    try {
+      const restoreResult = await restoreEntoLibBackup(
+        selection.filePaths[0]
+      );
+
+      if (restoreResult.success) {
+        setTimeout(() => {
+          app.relaunch();
+          app.exit(0);
+        }, 1200);
+      }
+
+      return restoreResult;
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : String(error);
+
+      setTimeout(() => {
+        app.relaunch();
+        app.exit(0);
+      }, 1800);
+
+      return {
+        success: false,
+        message:
+          "復元に失敗しました。元データへの復旧を試みました。\n\n" +
+          message
+      };
+    }
+  });
+
+createWindow();
 });
 

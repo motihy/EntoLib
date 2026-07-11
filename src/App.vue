@@ -82,6 +82,7 @@ const documents = ref<DocumentRecord[]>([]);
 const trashedDocuments = ref<DocumentRecord[]>([]);
 
 const loading = ref(false);
+const backupBusy = ref(false);
 const extractingMetadata = ref(false);
 const bulkImporting = ref(false);
 const bulkSelectionCount = ref(0);
@@ -767,6 +768,94 @@ function showTaxonomyView() {
   searchQuery.value = "";
   closeForm();
 }
+async function createBackup() {
+  backupBusy.value = true;
+
+  try {
+    const result = await window.ipcRenderer.invoke(
+      "backup:create"
+    );
+
+    if (result?.canceled) {
+      return;
+    }
+
+    if (!result?.success) {
+      alert(
+        result?.message ??
+          "バックアップを作成できませんでした"
+      );
+      return;
+    }
+
+    const sizeMegabytes =
+      typeof result.sizeBytes === "number"
+        ? (result.sizeBytes / 1024 / 1024).toFixed(1)
+        : "?";
+
+    alert(
+      "バックアップを作成しました\n\n" +
+        result.path +
+        "\n\nサイズ: " +
+        sizeMegabytes +
+        " MB"
+    );
+  } catch (error) {
+    const message =
+      error instanceof Error
+        ? error.message
+        : String(error);
+
+    console.error("Backup failed:", error);
+    alert(
+      "バックアップを作成できませんでした\n\n" +
+        message
+    );
+  } finally {
+    backupBusy.value = false;
+  }
+}
+
+async function restoreBackup() {
+  backupBusy.value = true;
+
+  try {
+    const result = await window.ipcRenderer.invoke(
+      "backup:restore"
+    );
+
+    if (result?.canceled) {
+      return;
+    }
+
+    if (!result?.success) {
+      alert(
+        result?.message ??
+          "バックアップを復元できませんでした"
+      );
+      return;
+    }
+
+    alert(
+      (result.message ?? "バックアップを復元しました") +
+        "\n\nEntoLibを再起動します。"
+    );
+  } catch (error) {
+    const message =
+      error instanceof Error
+        ? error.message
+        : String(error);
+
+    console.error("Restore failed:", error);
+    alert(
+      "バックアップを復元できませんでした\n\n" +
+        message
+    );
+  } finally {
+    backupBusy.value = false;
+  }
+}
+
 onMounted(() => {
   loadDocuments();
 });
@@ -775,6 +864,24 @@ onMounted(() => {
 <template>
   <div class="container">
     <h1>EntoLib</h1>
+
+    <div class="backup-toolbar">
+      <button
+        type="button"
+        :disabled="backupBusy"
+        @click="createBackup"
+      >
+        {{ backupBusy ? "処理中..." : "Backup" }}
+      </button>
+
+      <button
+        type="button"
+        :disabled="backupBusy"
+        @click="restoreBackup"
+      >
+        Restore Backup
+      </button>
+    </div>
 
     <div class="view-tabs">
       <button

@@ -9,7 +9,9 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "archiver": "^8.0.0",
     "better-sqlite3": "^12.11.1",
+    "extract-zip": "^2.0.1",
     "unpdf": "^1.6.2",
     "vue": "^3.4.21"
   },
