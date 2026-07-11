@@ -145,3 +145,17 @@ th{
 .form h2 {
   margin-top: 0;
 }
+.pdf-select-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.pdf-select-row input {
+  flex: 1;
+}
+
+.pdf-select-row button {
+  flex-shrink: 0;
+  white-space: nowrap;
+}

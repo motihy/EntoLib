@@ -6,7 +6,12 @@ import {
   restoreDocument,
   updateDocument
 } from "./database/DatabaseManager";
-import { app, BrowserWindow, ipcMain } from 'electron'
+import {
+  app,
+  BrowserWindow,
+  dialog,
+  ipcMain
+} from "electron";
 
 console.log("MAIN.TS LOADED");
 
@@ -105,6 +110,25 @@ app.whenReady().then(() => {
   // 文献情報を更新
   ipcMain.handle("document:update", (_, documentData) => {
     return updateDocument(documentData);
+  });
+    // PDFファイルを選択
+  ipcMain.handle("document:select-pdf", async () => {
+    const result = await dialog.showOpenDialog({
+      title: "PDFを選択",
+      properties: ["openFile"],
+      filters: [
+        {
+          name: "PDF files",
+          extensions: ["pdf"]
+        }
+      ]
+    });
+
+    if (result.canceled || result.filePaths.length === 0) {
+      return null;
+    }
+
+    return result.filePaths[0];
   });
   createWindow();
 });
