@@ -29,21 +29,16 @@ import {
   extractMetadataFromPdf
 } from "./services/MetadataExtractor";
 
+import {
+  importDocumentsFromPdfs
+} from "./services/DocumentImportService";
+
 const __dirname = path.dirname(
   fileURLToPath(import.meta.url)
 );
 
 console.log("MAIN.TS LOADED");
 
-// ビルド後のフォルダー構成
-//
-// ├─ dist
-// │  └─ index.html
-// │
-// └─ dist-electron
-//    ├─ main.js
-//    └─ preload.mjs
-//
 process.env.APP_ROOT = path.join(
   __dirname,
   ".."
@@ -78,7 +73,6 @@ function createWindow(): void {
       process.env.VITE_PUBLIC,
       "electron-vite.svg"
     ),
-
     webPreferences: {
       preload: path.join(
         __dirname,
@@ -99,7 +93,6 @@ function createWindow(): void {
   }
 }
 
-// すべてのウィンドウが閉じられたとき
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") {
     app.quit();
@@ -107,20 +100,15 @@ app.on("window-all-closed", () => {
   }
 });
 
-// macOSでDockアイコンが押されたとき
 app.on("activate", () => {
   if (
-    BrowserWindow.getAllWindows()
-      .length === 0
+    BrowserWindow.getAllWindows().length === 0
   ) {
     createWindow();
   }
 });
 
 app.whenReady().then(() => {
-  /*
-   * 文献を新規登録
-   */
   ipcMain.handle(
     "document:add",
     async (_, documentData) => {
@@ -130,19 +118,15 @@ app.whenReady().then(() => {
           ? documentData.pdf_path
           : "";
 
-      // コピー前のPDFからSHA-256を計算
       const fileHash = sourcePdfPath
         ? await calculateFileHash(
             sourcePdfPath
           )
         : null;
 
-      // 同じPDFが登録済みか確認
       if (fileHash) {
         const duplicate =
-          findDocumentByFileHash(
-            fileHash
-          );
+          findDocumentByFileHash(fileHash);
 
         if (duplicate) {
           const location =
@@ -159,7 +143,6 @@ app.whenReady().then(() => {
         }
       }
 
-      // EntoLib管理フォルダーへコピー
       const managedPdfPath =
         await importPdf(sourcePdfPath);
 
@@ -176,8 +159,6 @@ app.whenReady().then(() => {
 
         return true;
       } catch (error) {
-        // DOI重複などで登録に失敗した場合、
-        // 今回新しくコピーしたPDFを削除
         if (pdfWasCopied) {
           await removeManagedPdf(
             managedPdfPath
@@ -189,49 +170,27 @@ app.whenReady().then(() => {
     }
   );
 
-  /*
-   * Libraryの文献一覧を取得
-   */
   ipcMain.handle(
     "document:list",
-    () => {
-      return getDocuments();
-    }
+    () => getDocuments()
   );
 
-  /*
-   * 文献をゴミ箱へ移動
-   */
   ipcMain.handle(
     "document:trash",
-    (_, id: number) => {
-      return moveDocumentToTrash(id);
-    }
+    (_, id: number) =>
+      moveDocumentToTrash(id)
   );
 
-  /*
-   * ゴミ箱の文献一覧を取得
-   */
   ipcMain.handle(
     "document:trash-list",
-    () => {
-      return getTrashedDocuments();
-    }
+    () => getTrashedDocuments()
   );
 
-  /*
-   * ゴミ箱から文献を復元
-   */
   ipcMain.handle(
     "document:restore",
-    (_, id: number) => {
-      return restoreDocument(id);
-    }
+    (_, id: number) => restoreDocument(id)
   );
 
-  /*
-   * 文献情報を更新
-   */
   ipcMain.handle(
     "document:update",
     async (_, documentData) => {
@@ -247,8 +206,6 @@ app.whenReady().then(() => {
           )
         : null;
 
-      // 編集中の文献自身を除外して
-      // 重複PDFを検索
       if (fileHash) {
         const duplicate =
           findDocumentByFileHash(
@@ -279,14 +236,12 @@ app.whenReady().then(() => {
         sourcePdfPath !== managedPdfPath;
 
       try {
-        const updated =
-          updateDocument({
-            ...documentData,
-            pdf_path: managedPdfPath,
-            file_hash: fileHash
-          });
+        const updated = updateDocument({
+          ...documentData,
+          pdf_path: managedPdfPath,
+          file_hash: fileHash
+        });
 
-        // 対象文献が存在しなかった場合
         if (!updated && pdfWasCopied) {
           await removeManagedPdf(
             managedPdfPath
@@ -295,7 +250,6 @@ app.whenReady().then(() => {
 
         return updated;
       } catch (error) {
-        // DOI重複などで更新に失敗した場合
         if (pdfWasCopied) {
           await removeManagedPdf(
             managedPdfPath
@@ -307,20 +261,13 @@ app.whenReady().then(() => {
     }
   );
 
-  /*
-   * WindowsのPDF選択画面を開く
-   */
   ipcMain.handle(
     "document:select-pdf",
     async () => {
       const result =
         await dialog.showOpenDialog({
           title: "PDFを選択",
-
-          properties: [
-            "openFile"
-          ],
-
+          properties: ["openFile"],
           filters: [
             {
               name: "PDF files",
@@ -340,30 +287,61 @@ app.whenReady().then(() => {
     }
   );
 
-  /*
-   * PDFから書誌情報を抽出
-   */
   ipcMain.handle(
-    "document:extract-metadata",
-    async (
-      _,
-      pdfPath: string
-    ) => {
-      return extractMetadataFromPdf(
-        pdfPath
+    "document:select-pdfs",
+    async () => {
+      const result =
+        await dialog.showOpenDialog({
+          title: "複数のPDFを選択",
+          properties: [
+            "openFile",
+            "multiSelections"
+          ],
+          filters: [
+            {
+              name: "PDF files",
+              extensions: ["pdf"]
+            }
+          ]
+        });
+
+      if (result.canceled) {
+        return [];
+      }
+
+      return result.filePaths;
+    }
+  );
+
+  ipcMain.handle(
+    "document:bulk-import",
+    async (_, pdfPaths: unknown) => {
+      if (!Array.isArray(pdfPaths)) {
+        throw new Error(
+          "PDF一覧の形式が正しくありません"
+        );
+      }
+
+      const safePdfPaths = pdfPaths.filter(
+        (pdfPath): pdfPath is string =>
+          typeof pdfPath === "string"
+      );
+
+      return importDocumentsFromPdfs(
+        safePdfPaths
       );
     }
   );
 
-  /*
-   * 登録済みPDFを既定アプリで開く
-   */
+  ipcMain.handle(
+    "document:extract-metadata",
+    async (_, pdfPath: string) =>
+      extractMetadataFromPdf(pdfPath)
+  );
+
   ipcMain.handle(
     "document:open-pdf",
-    async (
-      _,
-      pdfPath: string
-    ) => {
+    async (_, pdfPath: string) => {
       if (!pdfPath) {
         return {
           success: false,
@@ -389,6 +367,5 @@ app.whenReady().then(() => {
     }
   );
 
-  // IPC登録後に画面を作成
   createWindow();
 });

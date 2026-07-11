@@ -35,6 +35,20 @@ interface ExtractedDocumentMetadata {
   warning: string | null;
 }
 
+type BulkImportStatus =
+  | "imported"
+  | "duplicate"
+  | "review"
+  | "failed";
+
+interface BulkImportResult {
+  filePath: string;
+  fileName: string;
+  status: BulkImportStatus;
+  title: string;
+  message: string;
+}
+
 type ViewMode = "library" | "trash";
 
 const currentView = ref<ViewMode>("library");
@@ -47,6 +61,9 @@ const trashedDocuments = ref<DocumentRecord[]>([]);
 
 const loading = ref(false);
 const extractingMetadata = ref(false);
+const bulkImporting = ref(false);
+const bulkSelectionCount = ref(0);
+const bulkImportResults = ref<BulkImportResult[]>([]);
 const searchQuery = ref("");
 
 const authors = ref("");
@@ -92,6 +109,35 @@ const filteredDocuments = computed(() => {
     );
   });
 });
+
+const bulkImportSummary = computed(() => {
+  const count = (status: BulkImportStatus) =>
+    bulkImportResults.value.filter(
+      (result) => result.status === status
+    ).length;
+
+  return {
+    imported: count("imported"),
+    duplicate: count("duplicate"),
+    review: count("review"),
+    failed: count("failed")
+  };
+});
+
+function bulkStatusLabel(
+  status: BulkImportStatus
+): string {
+  switch (status) {
+    case "imported":
+      return "登録済み";
+    case "duplicate":
+      return "重複";
+    case "review":
+      return "要確認";
+    case "failed":
+      return "失敗";
+  }
+}
 
 function resetForm() {
   authors.value = "";
@@ -165,6 +211,79 @@ async function selectPdf() {
     );
 
     alert("PDFを選択できませんでした");
+  }
+}
+
+async function bulkImportPdfs() {
+  try {
+    const selectedPaths =
+      await window.ipcRenderer.invoke(
+        "document:select-pdfs"
+      ) as string[];
+
+    if (!selectedPaths.length) {
+      return;
+    }
+
+    bulkSelectionCount.value =
+      selectedPaths.length;
+    bulkImporting.value = true;
+    bulkImportResults.value = [];
+
+    const results =
+      await window.ipcRenderer.invoke(
+        "document:bulk-import",
+        selectedPaths
+      ) as BulkImportResult[];
+
+    bulkImportResults.value = results;
+
+    await loadDocuments();
+
+    const imported = results.filter(
+      (result) =>
+        result.status === "imported"
+    ).length;
+
+    const duplicate = results.filter(
+      (result) =>
+        result.status === "duplicate"
+    ).length;
+
+    const review = results.filter(
+      (result) =>
+        result.status === "review"
+    ).length;
+
+    const failed = results.filter(
+      (result) =>
+        result.status === "failed"
+    ).length;
+
+    alert(
+      `一括追加が完了しました\n\n` +
+        `登録: ${imported}\n` +
+        `重複: ${duplicate}\n` +
+        `要確認: ${review}\n` +
+        `失敗: ${failed}`
+    );
+  } catch (error) {
+    const message =
+      error instanceof Error
+        ? error.message
+        : String(error);
+
+    console.error(
+      "PDFの一括追加に失敗しました:",
+      error
+    );
+
+    alert(
+      `PDFを一括追加できませんでした\n\n${message}`
+    );
+  } finally {
+    bulkImporting.value = false;
+    bulkSelectionCount.value = 0;
   }
 }
 
@@ -468,7 +587,6 @@ async function restoreDocument(
   }
 }
 
-// EntoLibの画面が開いたときは、文献一覧だけを読み込む
 onMounted(() => {
   loadDocuments();
 });
@@ -515,11 +633,67 @@ onMounted(() => {
       <button
         v-if="currentView === 'library'"
         type="button"
+        :disabled="bulkImporting"
+        @click="bulkImportPdfs"
+      >
+        {{
+          bulkImporting
+            ? `Importing ${bulkSelectionCount} PDFs...`
+            : "Add PDFs"
+        }}
+      </button>
+
+      <button
+        v-if="currentView === 'library'"
+        type="button"
+        :disabled="bulkImporting"
         @click="openAddForm"
       >
         Add Paper
       </button>
     </div>
+
+    <section
+      v-if="bulkImportResults.length > 0"
+      class="bulk-results"
+    >
+      <div class="bulk-results-header">
+        <h2>Bulk Import Results</h2>
+
+        <button
+          type="button"
+          @click="bulkImportResults = []"
+        >
+          Clear
+        </button>
+      </div>
+
+      <p class="bulk-summary">
+        登録 {{ bulkImportSummary.imported }}件・
+        重複 {{ bulkImportSummary.duplicate }}件・
+        要確認 {{ bulkImportSummary.review }}件・
+        失敗 {{ bulkImportSummary.failed }}件
+      </p>
+
+      <div class="bulk-result-list">
+        <article
+          v-for="result in bulkImportResults"
+          :key="`${result.filePath}-${result.status}`"
+          class="bulk-result-item"
+          :class="`status-${result.status}`"
+        >
+          <strong>
+            {{ bulkStatusLabel(result.status) }}
+          </strong>
+
+          <span>{{ result.title }}</span>
+
+          <small>
+            {{ result.fileName }} — {{ result.message }}
+          </small>
+        </article>
+      </div>
+    </section>
 
     <table>
       <thead>
@@ -592,17 +766,13 @@ onMounted(() => {
 
             <td>
               <div
-                v-if="
-                  currentView === 'library'
-                "
+                v-if="currentView === 'library'"
                 class="action-buttons"
               >
                 <button
                   class="open-button"
                   type="button"
-                  :disabled="
-                    !document.pdf_path
-                  "
+                  :disabled="!document.pdf_path"
                   @click="openPdf(document)"
                 >
                   Open PDF
@@ -611,9 +781,7 @@ onMounted(() => {
                 <button
                   class="edit-button"
                   type="button"
-                  @click="
-                    startEdit(document)
-                  "
+                  @click="startEdit(document)"
                 >
                   Edit
                 </button>
@@ -621,9 +789,7 @@ onMounted(() => {
                 <button
                   class="trash-button"
                   type="button"
-                  @click="
-                    trashDocument(document)
-                  "
+                  @click="trashDocument(document)"
                 >
                   Trash
                 </button>
@@ -633,9 +799,7 @@ onMounted(() => {
                 v-else
                 class="restore-button"
                 type="button"
-                @click="
-                  restoreDocument(document)
-                "
+                @click="restoreDocument(document)"
               >
                 Restore
               </button>
@@ -791,3 +955,67 @@ onMounted(() => {
     </div>
   </div>
 </template>
+
+<style scoped>
+.bulk-results {
+  margin: 16px 0 20px;
+  padding: 16px;
+  border: 1px solid #d0d0d0;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.bulk-results-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.bulk-results-header h2 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.bulk-summary {
+  margin: 10px 0;
+  font-weight: 600;
+}
+
+.bulk-result-list {
+  display: grid;
+  gap: 8px;
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.bulk-result-item {
+  display: grid;
+  grid-template-columns: 72px minmax(180px, 1fr);
+  gap: 4px 10px;
+  padding: 10px;
+  border-left: 4px solid #777777;
+  background: #f7f7f7;
+}
+
+.bulk-result-item small {
+  grid-column: 2;
+  overflow-wrap: anywhere;
+}
+
+.status-imported {
+  border-left-color: #357a38;
+}
+
+.status-duplicate {
+  border-left-color: #8a6d1d;
+}
+
+.status-review {
+  border-left-color: #9a5a00;
+}
+
+.status-failed {
+  border-left-color: #b94a48;
+}
+</style>
