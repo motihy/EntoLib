@@ -41,15 +41,35 @@ type BulkImportStatus =
   | "review"
   | "failed";
 
+interface BulkImportMetadataDraft {
+  authors: string;
+  year: number | null;
+  title: string;
+  journal: string;
+  volume: string;
+  issue: string;
+  pages: string;
+  doi: string;
+}
+
 interface BulkImportResult {
   filePath: string;
   fileName: string;
   status: BulkImportStatus;
   title: string;
   message: string;
+  metadata?: BulkImportMetadataDraft;
 }
 
-type ViewMode = "library" | "trash";
+interface BulkReviewItem extends BulkImportMetadataDraft {
+  filePath: string;
+  fileName: string;
+  message: string;
+  saving: boolean;
+  error: string;
+}
+
+type ViewMode = "library" | "trash" | "review";
 
 const currentView = ref<ViewMode>("library");
 const showForm = ref(false);
@@ -64,6 +84,8 @@ const extractingMetadata = ref(false);
 const bulkImporting = ref(false);
 const bulkSelectionCount = ref(0);
 const bulkImportResults = ref<BulkImportResult[]>([]);
+const reviewQueue = ref<BulkReviewItem[]>([]);
+const reviewSaving = ref(false);
 const searchQuery = ref("");
 
 const authors = ref("");
@@ -237,6 +259,46 @@ async function bulkImportPdfs() {
       ) as BulkImportResult[];
 
     bulkImportResults.value = results;
+
+    const newReviewItems = results
+      .filter(
+        (result) =>
+          result.status === "review" &&
+          result.metadata
+      )
+      .map((result) => ({
+        filePath: result.filePath,
+        fileName: result.fileName,
+        message: result.message,
+        authors: result.metadata?.authors ?? "",
+        year: result.metadata?.year ?? null,
+        title: result.metadata?.title ?? "",
+        journal: result.metadata?.journal ?? "",
+        volume: result.metadata?.volume ?? "",
+        issue: result.metadata?.issue ?? "",
+        pages: result.metadata?.pages ?? "",
+        doi: result.metadata?.doi ?? "",
+        saving: false,
+        error: ""
+      }));
+
+    const existingReviewItems = new Map(
+      reviewQueue.value.map((item) => [
+        item.filePath,
+        item
+      ])
+    );
+
+    for (const item of newReviewItems) {
+      existingReviewItems.set(
+        item.filePath,
+        item
+      );
+    }
+
+    reviewQueue.value = Array.from(
+      existingReviewItems.values()
+    );
 
     await loadDocuments();
 
@@ -444,6 +506,117 @@ async function showTrashView() {
   await loadTrashedDocuments();
 }
 
+function showReviewView() {
+  currentView.value = "review";
+  searchQuery.value = "";
+  closeForm();
+}
+
+function getReviewErrorMessage(
+  error: unknown
+): string {
+  return error instanceof Error
+    ? error.message
+    : String(error);
+}
+
+async function saveReviewItem(
+  item: BulkReviewItem,
+  showSuccess = true
+): Promise<boolean> {
+  if (!item.authors.trim() || !item.title.trim()) {
+    item.error =
+      "AuthorsとTitleを入力してください";
+    return false;
+  }
+
+  item.saving = true;
+  item.error = "";
+
+  try {
+    await window.ipcRenderer.invoke(
+      "document:add",
+      {
+        authors: item.authors.trim(),
+        year: item.year,
+        title: item.title.trim(),
+        journal: item.journal.trim(),
+        volume: item.volume.trim(),
+        issue: item.issue.trim(),
+        pages: item.pages.trim(),
+        doi: item.doi.trim() || null,
+        pdf_path: item.filePath
+      }
+    );
+
+    reviewQueue.value =
+      reviewQueue.value.filter(
+        (reviewItem) =>
+          reviewItem.filePath !== item.filePath
+      );
+
+    bulkImportResults.value =
+      bulkImportResults.value.filter(
+        (result) =>
+          !(
+            result.status === "review" &&
+            result.filePath === item.filePath
+          )
+      );
+
+    await loadDocuments();
+
+    if (showSuccess) {
+      alert("確認した文献を登録しました");
+    }
+
+    return true;
+  } catch (error) {
+    item.error = getReviewErrorMessage(error);
+    return false;
+  } finally {
+    item.saving = false;
+  }
+}
+
+async function saveAllReviewItems() {
+  const validItems = reviewQueue.value.filter(
+    (item) =>
+      item.authors.trim() &&
+      item.title.trim()
+  );
+
+  if (!validItems.length) {
+    alert(
+      "AuthorsとTitleが入力済みの文献がありません"
+    );
+    return;
+  }
+
+  reviewSaving.value = true;
+
+  let savedCount = 0;
+
+  try {
+    for (const item of [...validItems]) {
+      const saved = await saveReviewItem(
+        item,
+        false
+      );
+
+      if (saved) {
+        savedCount += 1;
+      }
+    }
+  } finally {
+    reviewSaving.value = false;
+  }
+
+  alert(
+    `${savedCount}件をLibraryへ登録しました`
+  );
+}
+
 async function saveDocument() {
   if (
     !authors.value.trim() ||
@@ -616,10 +789,21 @@ onMounted(() => {
       >
         Trash
       </button>
+
+      <button
+        type="button"
+        :class="{
+          active: currentView === 'review'
+        }"
+        @click="showReviewView"
+      >
+        Review ({{ reviewQueue.length }})
+      </button>
     </div>
 
     <div class="toolbar">
       <input
+        v-if="currentView !== 'review'"
         v-model="searchQuery"
         class="search-input"
         type="search"
@@ -691,11 +875,156 @@ onMounted(() => {
           <small>
             {{ result.fileName }} — {{ result.message }}
           </small>
+
+          <button
+            v-if="result.status === 'review'"
+            class="review-button"
+            type="button"
+            @click="showReviewView"
+          >
+            Review
+          </button>
         </article>
       </div>
     </section>
 
-    <table>
+    <section
+      v-if="currentView === 'review'"
+      class="review-section"
+    >
+      <div class="review-header">
+        <div>
+          <h2>Review Queue</h2>
+          <p>
+            自動取得できなかった項目を補って登録します。
+          </p>
+        </div>
+
+        <button
+          type="button"
+          :disabled="
+            reviewSaving ||
+            reviewQueue.length === 0
+          "
+          @click="saveAllReviewItems"
+        >
+          {{
+            reviewSaving
+              ? "Saving..."
+              : "Save All Valid"
+          }}
+        </button>
+      </div>
+
+      <p v-if="reviewQueue.length === 0">
+        確認が必要な文献はありません。
+      </p>
+
+      <div
+        v-else
+        class="review-list"
+      >
+        <article
+          v-for="item in reviewQueue"
+          :key="item.filePath"
+          class="review-card"
+        >
+          <div class="review-file">
+            <strong>{{ item.fileName }}</strong>
+            <small>{{ item.message }}</small>
+          </div>
+
+          <div class="review-grid">
+            <label>
+              Authors
+              <input
+                v-model="item.authors"
+                type="text"
+              />
+            </label>
+
+            <label>
+              Year
+              <input
+                v-model.number="item.year"
+                type="number"
+              />
+            </label>
+
+            <label class="review-title-field">
+              Title
+              <input
+                v-model="item.title"
+                type="text"
+              />
+            </label>
+
+            <label>
+              Journal
+              <input
+                v-model="item.journal"
+                type="text"
+              />
+            </label>
+
+            <label>
+              Volume
+              <input
+                v-model="item.volume"
+                type="text"
+              />
+            </label>
+
+            <label>
+              Issue
+              <input
+                v-model="item.issue"
+                type="text"
+              />
+            </label>
+
+            <label>
+              Pages
+              <input
+                v-model="item.pages"
+                type="text"
+              />
+            </label>
+
+            <label>
+              DOI
+              <input
+                v-model="item.doi"
+                type="text"
+              />
+            </label>
+          </div>
+
+          <p
+            v-if="item.error"
+            class="review-error"
+          >
+            {{ item.error }}
+          </p>
+
+          <div class="review-actions">
+            <button
+              type="button"
+              :disabled="item.saving"
+              @click="saveReviewItem(item)"
+            >
+              {{
+                item.saving
+                  ? "Saving..."
+                  : "Add to Library"
+              }}
+            </button>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <table v-if="currentView !== 'review'">
       <thead>
         <tr>
           <th>Authors</th>
@@ -991,7 +1320,7 @@ onMounted(() => {
 
 .bulk-result-item {
   display: grid;
-  grid-template-columns: 72px minmax(180px, 1fr);
+  grid-template-columns: 72px minmax(180px, 1fr) auto;
   gap: 4px 10px;
   padding: 10px;
   border-left: 4px solid #777777;
@@ -1001,6 +1330,12 @@ onMounted(() => {
 .bulk-result-item small {
   grid-column: 2;
   overflow-wrap: anywhere;
+}
+
+.review-button {
+  grid-column: 3;
+  grid-row: 1 / span 2;
+  align-self: center;
 }
 
 .status-imported {
@@ -1018,4 +1353,92 @@ onMounted(() => {
 .status-failed {
   border-left-color: #b94a48;
 }
+
+.review-section {
+  margin: 16px 0 20px;
+  padding: 16px;
+  border: 1px solid #d0d0d0;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.review-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.review-header h2,
+.review-header p {
+  margin: 0;
+}
+
+.review-header p {
+  margin-top: 4px;
+}
+
+.review-list {
+  display: grid;
+  gap: 16px;
+}
+
+.review-card {
+  padding: 14px;
+  border: 1px solid #d8d8d8;
+  border-radius: 8px;
+  background: #fafafa;
+}
+
+.review-file {
+  display: grid;
+  gap: 4px;
+  margin-bottom: 12px;
+  overflow-wrap: anywhere;
+}
+
+.review-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(130px, 1fr));
+  gap: 10px;
+}
+
+.review-grid label {
+  display: grid;
+  gap: 5px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.review-grid input {
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid #cccccc;
+  border-radius: 5px;
+  background: #ffffff;
+}
+
+.review-title-field {
+  grid-column: span 2;
+}
+
+.review-error {
+  margin: 10px 0 0;
+  color: #b94a48;
+  white-space: pre-wrap;
+}
+
+.review-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 12px;
+}
+
+@media (max-width: 900px) {
+  .review-grid {
+    grid-template-columns: repeat(2, minmax(130px, 1fr));
+  }
+}
+
 </style>

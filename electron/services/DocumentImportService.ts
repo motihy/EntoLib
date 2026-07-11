@@ -21,12 +21,24 @@ export type BulkImportStatus =
   | "review"
   | "failed";
 
+export interface BulkImportMetadataDraft {
+  authors: string;
+  year: number | null;
+  title: string;
+  journal: string;
+  volume: string;
+  issue: string;
+  pages: string;
+  doi: string;
+}
+
 export interface BulkImportResult {
   filePath: string;
   fileName: string;
   status: BulkImportStatus;
   title: string;
   message: string;
+  metadata?: BulkImportMetadataDraft;
 }
 
 function getErrorMessage(error: unknown): string {
@@ -101,7 +113,17 @@ export async function importDocumentsFromPdfs(
           status: "review",
           title: title || fileName,
           message:
-            "AuthorsまたはTitleを自動取得できなかったため、手動登録が必要です"
+            "AuthorsまたはTitleを自動取得できなかったため、内容を確認してください",
+          metadata: {
+            authors,
+            year: metadata.year,
+            title,
+            journal: metadata.journal.trim(),
+            volume: metadata.volume.trim(),
+            issue: metadata.issue.trim(),
+            pages: metadata.pages.trim(),
+            doi: metadata.doi.trim()
+          }
         });
 
         continue;
