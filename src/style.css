@@ -159,3 +159,22 @@ th{
   flex-shrink: 0;
   white-space: nowrap;
 }
+.open-button {
+  padding: 6px 10px;
+  border: 1px solid #555555;
+  border-radius: 5px;
+  background: white;
+  color: #333333;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.open-button:hover:not(:disabled) {
+  background: #333333;
+  color: white;
+}
+
+.open-button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}

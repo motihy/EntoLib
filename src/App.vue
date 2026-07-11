@@ -89,7 +89,28 @@ function openAddForm() {
   showForm.value = true;
 }
 
-function startEdit(document: DocumentRecord) {
+function startEdit(document: DocumentRecord) 
+async function openPdf(document: DocumentRecord) {
+  if (!document.pdf_path) {
+    alert("この文献にはPDFが登録されていません");
+    return;
+  }
+
+  try {
+    const result = await window.ipcRenderer.invoke(
+      "document:open-pdf",
+      document.pdf_path
+    );
+
+    if (!result.success) {
+      alert(`PDFを開けませんでした\n\n${result.message}`);
+    }
+  } catch (error) {
+    console.error("PDFを開けませんでした:", error);
+    alert("PDFを開けませんでした");
+  }
+}
+{
   editingDocumentId.value = document.id;
 
   authors.value = document.authors;
@@ -466,46 +487,48 @@ onMounted(() => {
               {{ document.pages ?? "" }}
             </td>
 
-            <td>
-              <div
-                v-if="
-                  currentView ===
-                  'library'
-                "
-                class="action-buttons"
-              >
-                <button
-                  class="edit-button"
-                  type="button"
-                  @click="
-                    startEdit(document)
-                  "
-                >
-                  Edit
-                </button>
+           <td>{{ document.pages ?? "" }}</td>
 
-                <button
-                  class="trash-button"
-                  type="button"
-                  @click="
-                    trashDocument(document)
-                  "
-                >
-                  Trash
-                </button>
-              </div>
+<td>
+  <div
+    v-if="currentView === 'library'"
+    class="action-buttons"
+  >
+    <button
+      class="open-button"
+      type="button"
+      :disabled="!document.pdf_path"
+      @click="openPdf(document)"
+    >
+      Open PDF
+    </button>
 
-              <button
-                v-else
-                class="restore-button"
-                type="button"
-                @click="
-                  restoreDocument(document)
-                "
-              >
-                Restore
-              </button>
-            </td>
+    <button
+      class="edit-button"
+      type="button"
+      @click="startEdit(document)"
+    >
+      Edit
+    </button>
+
+    <button
+      class="trash-button"
+      type="button"
+      @click="trashDocument(document)"
+    >
+      Trash
+    </button>
+  </div>
+
+  <button
+    v-else
+    class="restore-button"
+    type="button"
+    @click="restoreDocument(document)"
+  >
+    Restore
+  </button>
+</td>
           </tr>
         </template>
       </tbody>

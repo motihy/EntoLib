@@ -10,9 +10,9 @@ import {
   app,
   BrowserWindow,
   dialog,
-  ipcMain
+  ipcMain,
+  shell
 } from "electron";
-
 console.log("MAIN.TS LOADED");
 
 import { createRequire } from 'node:module'
@@ -130,5 +130,32 @@ app.whenReady().then(() => {
 
     return result.filePaths[0];
   });
+    // 登録されているPDFを既定のアプリで開く
+  ipcMain.handle(
+    "document:open-pdf",
+    async (_, pdfPath: string) => {
+      if (!pdfPath) {
+        return {
+          success: false,
+          message: "PDFが登録されていません"
+        };
+      }
+
+      const errorMessage =
+        await shell.openPath(pdfPath);
+
+      if (errorMessage) {
+        return {
+          success: false,
+          message: errorMessage
+        };
+      }
+
+      return {
+        success: true,
+        message: ""
+      };
+    }
+  );
   createWindow();
 });
