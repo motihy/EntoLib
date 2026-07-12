@@ -95,6 +95,28 @@ function createWindow(): void {
       )
     }
   });
+ 
+
+win.webContents.on(
+  "did-fail-load",
+  (_event, errorCode, errorDescription) => {
+    console.error(
+      "Renderer load failed:",
+      errorCode,
+      errorDescription
+    );
+  }
+);
+
+win.webContents.on(
+  "render-process-gone",
+  (_event, details) => {
+    console.error(
+      "Renderer process gone:",
+      details
+    );
+  }
+);
 
   if (VITE_DEV_SERVER_URL) {
     win.loadURL(VITE_DEV_SERVER_URL);

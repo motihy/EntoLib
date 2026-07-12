@@ -32,6 +32,9 @@
   "productName": "EntoLib",
   "build": {
     "appId": "org.entolib.app",
-    "productName": "EntoLib"
+    "productName": "EntoLib",
+    "directories": {
+      "output": "release/${version}"
+    }
   }
 }
