@@ -41,3 +41,5 @@ Thumbs.db
 *.sw?
 taxonomy_patch_backup_*/
 backup_feature_patch_backup_*/
+
+/release/
