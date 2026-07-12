@@ -28,5 +28,10 @@
     "vite-plugin-electron-renderer": "^0.14.5",
     "vue-tsc": "^2.0.26"
   },
-  "main": "dist-electron/main.js"
+  "main": "dist-electron/main.js",
+  "productName": "EntoLib",
+  "build": {
+    "appId": "org.entolib.app",
+    "productName": "EntoLib"
+  }
 }
