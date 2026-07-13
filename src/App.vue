@@ -1,4 +1,4 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
 import {
   computed,
   nextTick,
@@ -73,10 +73,25 @@ interface BulkReviewItem extends BulkImportMetadataDraft {
 
 type ViewMode = "library" | "trash" | "review" | "taxonomy";
 
+type CitationFormat =
+  | "bibliography"
+  | "narrative"
+  | "parenthetical"
+  | "doi";
+
+interface LibraryInfo {
+  root: string;
+  databasePath: string;
+  pdfDirectory: string;
+  backupDirectory: string;
+}
+
 const currentView = ref<ViewMode>("library");
 const showForm = ref(false);
 const editingDocumentId = ref<number | null>(null);
 const formSection = ref<HTMLElement | null>(null);
+const searchInput = ref<HTMLInputElement | null>(null);
+const authorsInput = ref<HTMLInputElement | null>(null);
 
 const documents = ref<DocumentRecord[]>([]);
 const trashedDocuments = ref<DocumentRecord[]>([]);
@@ -90,6 +105,14 @@ const bulkImportResults = ref<BulkImportResult[]>([]);
 const reviewQueue = ref<BulkReviewItem[]>([]);
 const reviewSaving = ref(false);
 const searchQuery = ref("");
+const libraryInfo = ref<LibraryInfo | null>(null);
+const libraryBusy = ref(false);
+const statusMessage = ref("");
+const statusKind = ref<"success" | "error" | "info">(
+  "info"
+);
+
+let statusTimer: ReturnType<typeof setTimeout> | null = null;
 
 const authors = ref("");
 const year = ref<number | null>(null);
@@ -164,6 +187,51 @@ function bulkStatusLabel(
   }
 }
 
+function setStatus(
+  message: string,
+  kind: "success" | "error" | "info" = "info"
+) {
+  statusMessage.value = message;
+  statusKind.value = kind;
+
+  if (statusTimer) {
+    clearTimeout(statusTimer);
+  }
+
+  statusTimer = setTimeout(() => {
+    statusMessage.value = "";
+    statusTimer = null;
+  }, 5000);
+}
+
+async function restoreTextInputFocus(
+  target: "search" | "authors" = "search"
+) {
+  await nextTick();
+
+  try {
+    await window.ipcRenderer.invoke(
+      "window:restore-focus"
+    );
+  } catch (error) {
+    console.error(
+      "ウィンドウのフォーカス復元に失敗しました:",
+      error
+    );
+  }
+
+  window.focus();
+
+  setTimeout(() => {
+    const targetInput =
+      target === "authors"
+        ? authorsInput.value
+        : searchInput.value;
+
+    targetInput?.focus();
+  }, 50);
+}
+
 function resetForm() {
   authors.value = "";
   year.value = null;
@@ -236,6 +304,8 @@ async function selectPdf() {
     );
 
     alert("PDFを選択できませんでした");
+  } finally {
+    await restoreTextInputFocus("authors");
   }
 }
 
@@ -247,6 +317,7 @@ async function bulkImportPdfs() {
       ) as string[];
 
     if (!selectedPaths.length) {
+      await restoreTextInputFocus("search");
       return;
     }
 
@@ -325,12 +396,9 @@ async function bulkImportPdfs() {
         result.status === "failed"
     ).length;
 
-    alert(
-      `一括追加が完了しました\n\n` +
-        `登録: ${imported}\n` +
-        `重複: ${duplicate}\n` +
-        `要確認: ${review}\n` +
-        `失敗: ${failed}`
+    setStatus(
+      `一括追加完了：登録 ${imported}件・重複 ${duplicate}件・要確認 ${review}件・失敗 ${failed}件`,
+      failed > 0 ? "error" : "success"
     );
   } catch (error) {
     const message =
@@ -349,6 +417,7 @@ async function bulkImportPdfs() {
   } finally {
     bulkImporting.value = false;
     bulkSelectionCount.value = 0;
+    await restoreTextInputFocus("search");
   }
 }
 
@@ -768,6 +837,274 @@ function showTaxonomyView() {
   searchQuery.value = "";
   closeForm();
 }
+function splitAuthors(authorText: string): string[] {
+  const trimmed = authorText.trim();
+
+  if (!trimmed) {
+    return [];
+  }
+
+  if (trimmed.includes(";")) {
+    return trimmed
+      .split(";")
+      .map((author) => author.trim())
+      .filter(Boolean);
+  }
+
+  return trimmed
+    .split(/\s+(?:and|&)\s+/i)
+    .map((author) => author.trim())
+    .filter(Boolean);
+}
+
+function authorSurname(author: string): string {
+  const beforeComma = author.split(",")[0]?.trim();
+
+  if (author.includes(",") && beforeComma) {
+    return beforeComma;
+  }
+
+  const words = author
+    .replace(/[.]/g, "")
+    .trim()
+    .split(/\s+/);
+
+  return words[words.length - 1] ?? author.trim();
+}
+
+function inTextAuthorLabel(
+  document: DocumentRecord,
+  narrative: boolean
+): string {
+  const surnames = splitAuthors(document.authors)
+    .map(authorSurname)
+    .filter(Boolean);
+
+  if (surnames.length === 0) {
+    return document.authors.trim() || "Unknown";
+  }
+
+  if (surnames.length === 1) {
+    return surnames[0];
+  }
+
+  if (surnames.length === 2) {
+    return narrative
+      ? `${surnames[0]} and ${surnames[1]}`
+      : `${surnames[0]} & ${surnames[1]}`;
+  }
+
+  return `${surnames[0]} et al.`;
+}
+
+function cleanDoiForCitation(value: string): string {
+  return value
+    .trim()
+    .replace(
+      /^https?:\/\/(?:dx\.)?doi\.org\//i,
+      ""
+    )
+    .replace(/^doi:\s*/i, "");
+}
+
+function ensureFinalPeriod(value: string): string {
+  const trimmed = value.trim();
+
+  if (!trimmed) {
+    return "";
+  }
+
+  return /[.!?]$/.test(trimmed)
+    ? trimmed
+    : `${trimmed}.`;
+}
+
+function formatBibliography(
+  document: DocumentRecord
+): string {
+  const parts: string[] = [];
+
+  if (document.authors.trim()) {
+    parts.push(
+      ensureFinalPeriod(document.authors)
+    );
+  }
+
+  if (document.year !== null) {
+    parts.push(`${document.year}.`);
+  }
+
+  if (document.title.trim()) {
+    parts.push(
+      ensureFinalPeriod(document.title)
+    );
+  }
+
+  const sourceParts: string[] = [];
+
+  if (document.journal?.trim()) {
+    sourceParts.push(document.journal.trim());
+  }
+
+  let volumeIssue = document.volume?.trim() ?? "";
+
+  if (document.issue?.trim()) {
+    volumeIssue += `(${document.issue.trim()})`;
+  }
+
+  if (volumeIssue) {
+    sourceParts.push(volumeIssue);
+  }
+
+  let source = sourceParts.join(" ");
+
+  if (document.pages?.trim()) {
+    source += source
+      ? `: ${document.pages.trim()}`
+      : document.pages.trim();
+  }
+
+  if (source) {
+    parts.push(ensureFinalPeriod(source));
+  }
+
+  if (document.doi?.trim()) {
+    parts.push(
+      `https://doi.org/${cleanDoiForCitation(document.doi)}`
+    );
+  }
+
+  return parts.join(" ");
+}
+
+function formatCitation(
+  document: DocumentRecord,
+  format: CitationFormat
+): string {
+  const citationYear =
+    document.year !== null
+      ? String(document.year)
+      : "n.d.";
+
+  switch (format) {
+    case "bibliography":
+      return formatBibliography(document);
+    case "narrative":
+      return `${inTextAuthorLabel(document, true)} (${citationYear})`;
+    case "parenthetical":
+      return `(${inTextAuthorLabel(document, false)}, ${citationYear})`;
+    case "doi": {
+      if (!document.doi?.trim()) {
+        throw new Error(
+          "この文献にはDOIが登録されていません"
+        );
+      }
+
+      return `https://doi.org/${cleanDoiForCitation(document.doi)}`;
+    }
+  }
+}
+
+async function copyCitationFromSelect(
+  document: DocumentRecord,
+  event: Event
+) {
+  const select = event.target as HTMLSelectElement;
+  const format = select.value as CitationFormat;
+
+  if (!format) {
+    return;
+  }
+
+  try {
+    const citation = formatCitation(
+      document,
+      format
+    );
+
+    await window.ipcRenderer.invoke(
+      "clipboard:write-text",
+      citation
+    );
+
+    setStatus(
+      `「${document.title}」の引用情報をコピーしました`,
+      "success"
+    );
+  } catch (error) {
+    const message =
+      error instanceof Error
+        ? error.message
+        : String(error);
+
+    setStatus(message, "error");
+  } finally {
+    select.selectedIndex = 0;
+    await restoreTextInputFocus("search");
+  }
+}
+
+async function loadLibraryInfo() {
+  try {
+    libraryInfo.value =
+      await window.ipcRenderer.invoke(
+        "library:get-info"
+      ) as LibraryInfo;
+  } catch (error) {
+    console.error(
+      "ライブラリ情報の取得に失敗しました:",
+      error
+    );
+  }
+}
+
+async function changeLibraryLocation() {
+  libraryBusy.value = true;
+
+  try {
+    const result =
+      await window.ipcRenderer.invoke(
+        "library:change-location"
+      );
+
+    if (result?.canceled) {
+      return;
+    }
+
+    if (!result?.success) {
+      throw new Error(
+        result?.message ??
+          "ライブラリ保存先を変更できませんでした"
+      );
+    }
+
+    alert(
+      "ライブラリを新しい保存先へコピーしました。\n\nEntoLibを再起動します。元のデータは削除されていません。"
+    );
+
+    await window.ipcRenderer.invoke(
+      "app:relaunch"
+    );
+  } catch (error) {
+    const message =
+      error instanceof Error
+        ? error.message
+        : String(error);
+
+    console.error(
+      "ライブラリ保存先の変更に失敗しました:",
+      error
+    );
+
+    alert(
+      `ライブラリ保存先を変更できませんでした\n\n${message}`
+    );
+  } finally {
+    libraryBusy.value = false;
+    await restoreTextInputFocus("search");
+  }
+}
+
 async function createBackup() {
   backupBusy.value = true;
 
@@ -858,6 +1195,7 @@ async function restoreBackup() {
 
 onMounted(() => {
   loadDocuments();
+  loadLibraryInfo();
 });
 </script>
 
@@ -881,7 +1219,32 @@ onMounted(() => {
       >
         Restore Backup
       </button>
+
+      <button
+        type="button"
+        :disabled="libraryBusy || backupBusy"
+        @click="changeLibraryLocation"
+      >
+        {{
+          libraryBusy
+            ? "Moving Library..."
+            : "Library Location"
+        }}
+      </button>
     </div>
+
+    <div class="library-location">
+      <strong>Library:</strong>
+      <span>{{ libraryInfo?.root ?? "読み込み中..." }}</span>
+    </div>
+
+    <p
+      v-if="statusMessage"
+      class="status-message"
+      :class="`status-${statusKind}`"
+    >
+      {{ statusMessage }}
+    </p>
 
     <div class="view-tabs">
       <button
@@ -925,6 +1288,7 @@ onMounted(() => {
     <div class="toolbar">
       <input
         v-if="currentView !== 'review' && currentView !== 'taxonomy'"
+        ref="searchInput"
         v-model="searchQuery"
         class="search-input"
         type="search"
@@ -1229,6 +1593,31 @@ onMounted(() => {
                   Open PDF
                 </button>
 
+                <select
+                  class="citation-select"
+                  aria-label="引用情報をコピー"
+                  @change="copyCitationFromSelect(document, $event)"
+                >
+                  <option value="" selected disabled>
+                    Copy citation...
+                  </option>
+                  <option value="bibliography">
+                    Reference list
+                  </option>
+                  <option value="narrative">
+                    Author (Year)
+                  </option>
+                  <option value="parenthetical">
+                    (Author, Year)
+                  </option>
+                  <option
+                    value="doi"
+                    :disabled="!document.doi"
+                  >
+                    DOI link
+                  </option>
+                </select>
+
                 <button
                   class="edit-button"
                   type="button"
@@ -1280,6 +1669,7 @@ onMounted(() => {
         Authors
 
         <input
+          ref="authorsInput"
           v-model="authors"
           type="text"
         />

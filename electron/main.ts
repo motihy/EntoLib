@@ -1,9 +1,14 @@
-﻿import {
+import {
   app,
   BrowserWindow,
+  clipboard,
   dialog,
   ipcMain,
   shell
+} from "electron";
+
+import type {
+  OpenDialogOptions
 } from "electron";
 
 import { fileURLToPath } from "node:url";
@@ -48,6 +53,11 @@ import {
   restoreEntoLibBackup
 } from "./services/BackupService";
 
+import {
+  currentLibraryInfo,
+  copyLibraryToLocation
+} from "./services/LibraryLocationService";
+
 const __dirname = path.dirname(
   fileURLToPath(import.meta.url)
 );
@@ -81,6 +91,41 @@ process.env.VITE_PUBLIC =
     : RENDERER_DIST;
 
 let win: BrowserWindow | null = null;
+
+function restoreWindowFocus(): void {
+  setTimeout(() => {
+    if (!win || win.isDestroyed()) {
+      return;
+    }
+
+    if (win.isMinimized()) {
+      win.restore();
+    }
+
+    win.show();
+    win.focus();
+    win.webContents.focus();
+  }, 0);
+}
+
+async function showOpenDialogForMain(
+  options: OpenDialogOptions
+) {
+  try {
+    if (win && !win.isDestroyed()) {
+      return await dialog.showOpenDialog(
+        win,
+        options
+      );
+    }
+
+    return await dialog.showOpenDialog(
+      options
+    );
+  } finally {
+    restoreWindowFocus();
+  }
+}
 
 function createWindow(): void {
   win = new BrowserWindow({
@@ -302,7 +347,7 @@ app.whenReady().then(() => {
     "document:select-pdf",
     async () => {
       const result =
-        await dialog.showOpenDialog({
+        await showOpenDialogForMain({
           title: "PDFを選択",
           properties: ["openFile"],
           filters: [
@@ -328,7 +373,7 @@ app.whenReady().then(() => {
     "document:select-pdfs",
     async () => {
       const result =
-        await dialog.showOpenDialog({
+        await showOpenDialogForMain({
           title: "複数のPDFを選択",
           properties: [
             "openFile",
@@ -405,6 +450,109 @@ app.whenReady().then(() => {
   );
 
 
+  ipcMain.handle(
+    "clipboard:write-text",
+    (_, value: unknown) => {
+      if (typeof value !== "string") {
+        throw new Error(
+          "コピーする文字列が正しくありません"
+        );
+      }
+
+      clipboard.writeText(value);
+      return true;
+    }
+  );
+
+  ipcMain.handle(
+    "window:restore-focus",
+    () => {
+      restoreWindowFocus();
+      return true;
+    }
+  );
+
+  ipcMain.handle(
+    "library:get-info",
+    () => currentLibraryInfo()
+  );
+
+  ipcMain.handle(
+    "library:change-location",
+    async () => {
+      const current = currentLibraryInfo();
+      const selection =
+        await showOpenDialogForMain({
+          title: "EntoLibライブラリの新しい保存先",
+          defaultPath: current.root,
+          properties: ["openDirectory"]
+        });
+
+      if (
+        selection.canceled ||
+        selection.filePaths.length === 0
+      ) {
+        return {
+          success: false,
+          canceled: true
+        };
+      }
+
+      const destinationRoot =
+        selection.filePaths[0];
+
+      const confirmationOptions = {
+        type: "question" as const,
+        title: "ライブラリ保存先を変更",
+        message:
+          "文献データと管理PDFを新しいフォルダーへコピーします。",
+        detail:
+          `現在: ${current.root}\n\n新しい保存先: ${destinationRoot}\n\n元のデータは安全のため削除しません。`,
+        buttons: ["キャンセル", "コピーして変更"],
+        defaultId: 1,
+        cancelId: 0,
+        noLink: true
+      };
+
+      const confirmation =
+        win && !win.isDestroyed()
+          ? await dialog.showMessageBox(
+              win,
+              confirmationOptions
+            )
+          : await dialog.showMessageBox(
+              confirmationOptions
+            );
+
+      restoreWindowFocus();
+
+      if (confirmation.response !== 1) {
+        return {
+          success: false,
+          canceled: true
+        };
+      }
+
+      const info = await copyLibraryToLocation(
+        destinationRoot
+      );
+
+      return {
+        success: true,
+        info
+      };
+    }
+  );
+
+  ipcMain.handle(
+    "app:relaunch",
+    () => {
+      app.relaunch();
+      app.exit(0);
+      return true;
+    }
+  );
+
   // Taxonomy IPC
   ipcMain.handle("taxon:list", (_, search: string = "") => {
     return listTaxa(search);
@@ -472,7 +620,7 @@ app.whenReady().then(() => {
   });
 
   ipcMain.handle("backup:restore", async () => {
-    const selection = await dialog.showOpenDialog({
+    const selection = await showOpenDialogForMain({
       title: "EntoLibバックアップを選択",
       properties: ["openFile"],
       filters: [

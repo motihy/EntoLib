@@ -1,4 +1,3 @@
-import { app } from "electron";
 import {
   createHash,
   randomUUID
@@ -11,14 +10,13 @@ import {
 } from "node:fs/promises";
 import path from "node:path";
 
+import {
+  getLibraryPdfDirectory
+} from "./LibraryManager";
+
 // EntoLibが管理するPDF保存フォルダー
 export function getPdfStorageDirectory(): string {
-  return path.join(
-    app.getPath("documents"),
-    "EntoLib",
-    "library",
-    "pdfs"
-  );
+  return getLibraryPdfDirectory();
 }
 
 // PDFがEntoLib管理フォルダー内にあるか確認

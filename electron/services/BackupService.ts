@@ -21,6 +21,7 @@ import extractZip from "extract-zip";
 
 import { db } from "../database/DatabaseManager";
 import { getPdfStorageDirectory } from "./PdfStorage";
+import { getLibraryDatabasePath } from "./LibraryManager";
 
 const BACKUP_FORMAT = "entolib-backup";
 const BACKUP_VERSION = 1;
@@ -43,10 +44,6 @@ interface BackupManifest {
   pdfDirectory: string;
   documentCount: number;
   taxonCount: number;
-}
-
-function getDatabasePath(): string {
-  return path.join(process.cwd(), "database", "entolib.db");
 }
 
 async function pathExists(targetPath: string): Promise<boolean> {
@@ -287,7 +284,7 @@ export async function restoreEntoLibBackup(
     path.join(tmpdir(), "entolib-restore-safety-")
   );
 
-  const currentDatabasePath = getDatabasePath();
+  const currentDatabasePath = getLibraryDatabasePath();
   const currentPdfDirectory = getPdfStorageDirectory();
   const libraryDirectory = path.dirname(currentPdfDirectory);
   const stagedPdfDirectory = path.join(

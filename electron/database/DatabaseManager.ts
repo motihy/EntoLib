@@ -1,86 +1,81 @@
 import Database from "better-sqlite3";
-import fs from "node:fs";
-import path from "node:path";
 
-const databaseDir = path.join(
-  process.cwd(),
-  "database"
-);
+import {
+  ensureLibraryDirectories,
+  getLibraryDatabasePath,
+  migrateLegacyDatabaseIfNeeded
+} from "../services/LibraryManager";
 
-if (!fs.existsSync(databaseDir)) {
-  fs.mkdirSync(databaseDir, {
-    recursive: true
-  });
-}
+function openDatabase(): Database.Database {
+  ensureLibraryDirectories();
+  migrateLegacyDatabaseIfNeeded();
 
-const databasePath = path.join(
-  databaseDir,
-  "entolib.db"
-);
-
-export const db = new Database(databasePath);
-
-// documentsテーブルを作成
-db.exec(`
-  CREATE TABLE IF NOT EXISTS documents (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-
-    authors TEXT NOT NULL,
-    year INTEGER,
-    title TEXT NOT NULL,
-
-    journal TEXT,
-    volume TEXT,
-    issue TEXT,
-    pages TEXT,
-
-    doi TEXT UNIQUE,
-    pdf_path TEXT NOT NULL,
-    file_hash TEXT,
-
-    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-    deleted_at TEXT
+  const database = new Database(
+    getLibraryDatabasePath()
   );
-`);
 
-// 現在のdocumentsテーブルの列を取得
-const documentColumns = db
-  .prepare("PRAGMA table_info(documents)")
-  .all() as Array<{ name: string }>;
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS documents (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
 
-// deleted_at列があるか確認
-const hasDeletedAt = documentColumns.some(
-  (column) => column.name === "deleted_at"
-);
+      authors TEXT NOT NULL,
+      year INTEGER,
+      title TEXT NOT NULL,
 
-// 既存データベースにdeleted_at列を追加
-if (!hasDeletedAt) {
-  db.exec(`
-    ALTER TABLE documents
-    ADD COLUMN deleted_at TEXT
+      journal TEXT,
+      volume TEXT,
+      issue TEXT,
+      pages TEXT,
+
+      doi TEXT UNIQUE,
+      pdf_path TEXT NOT NULL,
+      file_hash TEXT,
+
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      deleted_at TEXT
+    );
   `);
 
-  console.log("Added deleted_at column.");
+  const documentColumns = database
+    .prepare("PRAGMA table_info(documents)")
+    .all() as Array<{ name: string }>;
+
+  const hasDeletedAt = documentColumns.some(
+    (column) => column.name === "deleted_at"
+  );
+
+  if (!hasDeletedAt) {
+    database.exec(`
+      ALTER TABLE documents
+      ADD COLUMN deleted_at TEXT
+    `);
+
+    console.log("Added deleted_at column.");
+  }
+
+  const hasFileHash = documentColumns.some(
+    (column) => column.name === "file_hash"
+  );
+
+  if (!hasFileHash) {
+    database.exec(`
+      ALTER TABLE documents
+      ADD COLUMN file_hash TEXT
+    `);
+
+    console.log("Added file_hash column.");
+  }
+
+  console.log(
+    "SQLite connected:",
+    getLibraryDatabasePath()
+  );
+
+  return database;
 }
 
-// file_hash列があるか確認
-const hasFileHash = documentColumns.some(
-  (column) => column.name === "file_hash"
-);
+export let db = openDatabase();
 
-// 既存データベースにfile_hash列を追加
-if (!hasFileHash) {
-  db.exec(`
-    ALTER TABLE documents
-    ADD COLUMN file_hash TEXT
-  `);
-
-  console.log("Added file_hash column.");
-}
-
-console.log("SQLite connected.");
-
-// 新しく登録する文献データ
 export interface NewDocument {
   authors: string;
   year: number | null;
@@ -95,7 +90,7 @@ export interface NewDocument {
   pdf_path: string;
   file_hash: string | null;
 }
-// SQLiteから取得する文献データ
+
 export interface DocumentRecord {
   id: number;
 
@@ -116,7 +111,6 @@ export interface DocumentRecord {
   deleted_at: string | null;
 }
 
-// 文献を登録
 export function addDocument(
   documentData: NewDocument
 ): void {
@@ -155,7 +149,6 @@ export function addDocument(
   );
 }
 
-// ゴミ箱に入っていない文献を取得
 export function getDocuments(): DocumentRecord[] {
   const stmt = db.prepare(`
     SELECT
@@ -183,7 +176,6 @@ export function getDocuments(): DocumentRecord[] {
   return stmt.all() as DocumentRecord[];
 }
 
-// 文献をゴミ箱へ移動
 export function moveDocumentToTrash(
   id: number
 ): boolean {
@@ -197,7 +189,6 @@ export function moveDocumentToTrash(
   return result.changes > 0;
 }
 
-// ゴミ箱に入っている文献を取得
 export function getTrashedDocuments():
   DocumentRecord[] {
   const stmt = db.prepare(`
@@ -223,7 +214,6 @@ export function getTrashedDocuments():
   return stmt.all() as DocumentRecord[];
 }
 
-// ゴミ箱から文献を元に戻す
 export function restoreDocument(
   id: number
 ): boolean {
@@ -237,7 +227,6 @@ export function restoreDocument(
   return result.changes > 0;
 }
 
-// 編集時に受け取る文献データ
 export interface UpdateDocument {
   id: number;
 
@@ -254,7 +243,7 @@ export interface UpdateDocument {
   pdf_path: string;
   file_hash: string | null;
 }
-// 文献情報を更新
+
 export function updateDocument(
   documentData: UpdateDocument
 ): boolean {
@@ -289,6 +278,7 @@ export function updateDocument(
 
   return result.changes > 0;
 }
+
 export interface DuplicateDocumentRecord {
   id: number;
   authors: string;
@@ -297,7 +287,6 @@ export interface DuplicateDocumentRecord {
   deleted_at: string | null;
 }
 
-// 同じPDFがすでに登録されているか検索
 export function findDocumentByFileHash(
   fileHash: string,
   excludeId?: number
